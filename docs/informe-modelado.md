@@ -1,4 +1,4 @@
-# Proyección de la tasa de crédito de consumo en Colombia
+# TasaViva: proyección de la tasa de crédito de consumo en Colombia
 
 ## Lectura para la decisión
 
@@ -184,6 +184,8 @@ Ningún origen de los modelos iterativos tuvo que sustituirse por la tasa vigent
 | Potenciación de gradiente | 0,55 | 1,14 | 2,38 | 3,72 | 4,80 |
 | Ridge con inflación | 0,54 | 1,00 | 1,86 | 3,33 | 4,00 |
 | Ridge con brecha de inflación | 0,54 | 1,01 | 1,90 | 3,35 | 4,28 |
+| Ridge con tasa real de política | 0,52 | 0,93 | 1,75 | 3,36 | 3,67 |
+| Combinado (agregados + tasa real) | 0,53 | 0,93 | 1,73 | 3,24 | 3,71 |
 
 Razón del RMSE frente a la tasa constante. Por debajo de 1 el modelo gana.
 
@@ -202,6 +204,8 @@ Razón del RMSE frente a la tasa constante. Por debajo de 1 el modelo gana.
 | Potenciación de gradiente | 0,90 | 0,90 | 1,05 | 0,95 | 0,83 |
 | Ridge con inflación | 0,88 | 0,79 | 0,82 | 0,85 | 0,69 |
 | Ridge con brecha de inflación | 0,88 | 0,80 | 0,84 | 0,85 | 0,74 |
+| Ridge con tasa real de política | 0,86 | 0,73 | 0,77 | 0,86 | 0,64 |
+| Combinado (agregados + tasa real) | 0,86 | 0,73 | 0,76 | 0,83 | 0,64 |
 
 Diebold-Mariano del Ridge con agregados contra la tasa constante (estadístico HLN y valor p bilateral):
 
@@ -292,6 +296,31 @@ A un mes la reducción es 0,004 puntos. A tres meses es 0,036. A seis meses es 0
 
 No se desprende que un aumento del crecimiento de M2 baje o suba la tasa en una cantidad identificada. Los tres agregados van juntos, sus coeficientes no son estables por separado y el ejercicio es predictivo. Granger, mirado antes de 2012, ya mostraba una señal débil y dependiente del rezago. El backtest es la pieza que se usa para la decisión, y dice que el bloque monetario mejora el pronóstico de mediano plazo y no el del mes siguiente.
 
+## Datos nuevos y su aporte
+
+Al estudio se le sumaron cuatro fuentes abiertas que no venían en los archivos del Banco de la República: la TRM diaria, el interés bancario corriente con su tasa de usura y las tasas de libre inversión por entidad (Superintendencia Financiera, datos.gov.co), y la tasa efectiva de fondos federales (Reserva Federal de Nueva York). `python -m src.fuentes` las descarga y la página las refresca en vivo.
+
+Cada dato se probó sumándolo a la especificación base, con el mismo backtest y el mismo λ. La tabla da el RMSE en puntos porcentuales.
+
+| Especificación | 1 m | 3 m | 6 m | 12 m | 24 m |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Especificación base (seis variables) | 0,533 | 0,961 | 1,756 | 3,178 | 3,773 |
+| + Tasa real de política | 0,524 | 0,927 | 1,746 | 3,355 | 3,671 |
+| + Depreciación anual del peso (TRM) | 0,535 | 0,973 | 1,784 | 3,192 | 3,808 |
+| + Depreciación a 3 meses (TRM) | 0,530 | 0,963 | 1,768 | 3,195 | 3,806 |
+| + Diferencial frente a la Fed | 0,535 | 0,970 | 1,763 | 3,139 | 4,337 |
+| + Diferencial y variación de la Fed | 0,534 | 0,973 | 1,804 | 3,212 | 4,364 |
+| + Inflación anual | 0,537 | 1,000 | 1,862 | 3,330 | 3,999 |
+| + Holgura frente a la usura | 0,555 | 1,047 | 1,956 | 3,460 | 5,313 |
+| + TRM, Fed e inflación a la vez | 0,542 | 1,025 | 1,939 | 3,465 | 4,512 |
+
+Bajan el error en más de 0,005 puntos, en los horizontes indicados: Tasa real de política (1, 3, 6, 24 meses); Diferencial frente a la Fed (12 meses). Ninguno mejora todos los horizontes a la vez.
+
+La lectura es sobria: la tasa de consumo ya resume casi toda la información que traen el dólar, la Fed, la inflación y la usura. La tasa real de política (política menos inflación) es la única que ayuda en varios horizontes, y por eso entra en dos candidatos nuevos del backtest: el Ridge con tasa real y un combinado que promedia ese Ridge con el de agregados, con pesos iguales fijados de antemano. El modelo principal no cambia. Los datos nuevos se quedan en la página como contexto y seguimiento en vivo.
+
+- Ridge con tasa real de política. RMSE: 1 m: 0,524, 3 m: 0,927, 6 m: 1,746, 12 m: 3,355, 24 m: 3,671.
+- Combinado (agregados + tasa real). RMSE: 1 m: 0,526, 3 m: 0,932, 6 m: 1,730, 12 m: 3,236, 24 m: 3,707.
+
 ## Limitaciones
 
 El modelo no es una regla de política ni un equilibrio de crédito. Mantener las exógenas fuera del pronóstico evita usar datos futuros, y también impide responder, dentro de este ajuste, qué pasa si la política baja 100 puntos básicos a lo largo del próximo año. La aplicación tiene un control de condiciones iniciales: modifica el spread, la variación de la política o el crecimiento de M2 del mes de origen y reevalúa el mismo Ridge. Eso no es un escenario de senda. Está rotulado como tal y no sustituye a esta proyección.
@@ -300,24 +329,29 @@ Las bandas heredan los quiebres de 2020-2023 y son anchas. Hay autocorrelación 
 
 ## Gráficos
 
-- `/cursor/stores/bc-b52d4e81-11c8-4f0f-a87d-9feae7850cff/media/tasa-consumo-y-politica.png`
-- `/cursor/stores/bc-b52d4e81-11c8-4f0f-a87d-9feae7850cff/media/agregados-niveles.png`
-- `/cursor/stores/bc-b52d4e81-11c8-4f0f-a87d-9feae7850cff/media/agregados-crecimiento.png`
-- `/cursor/stores/bc-b52d4e81-11c8-4f0f-a87d-9feae7850cff/media/matriz-correlacion.png`
-- `/cursor/stores/bc-b52d4e81-11c8-4f0f-a87d-9feae7850cff/media/correlacion-cruzada.png`
-- `/cursor/stores/bc-b52d4e81-11c8-4f0f-a87d-9feae7850cff/media/rmse-por-horizonte.png`
-- `/cursor/stores/bc-b52d4e81-11c8-4f0f-a87d-9feae7850cff/media/proyeccion-septiembre-2026.png`
-- `/cursor/stores/bc-b52d4e81-11c8-4f0f-a87d-9feae7850cff/media/residuos-un-paso.png`
-- `/cursor/stores/bc-b52d4e81-11c8-4f0f-a87d-9feae7850cff/media/rmse-por-regimen.png`
+- `media/tasa-consumo-y-politica.png`
+- `media/agregados-niveles.png`
+- `media/agregados-crecimiento.png`
+- `media/matriz-correlacion.png`
+- `media/correlacion-cruzada.png`
+- `media/rmse-por-horizonte.png`
+- `media/proyeccion-septiembre-2026.png`
+- `media/residuos-un-paso.png`
+- `media/rmse-por-regimen.png`
 
 ## Reproducción
 
 Desde el directorio `proyecto`:
 
 ```bash
+python3 -m src.fuentes      # opcional: refresca los datos abiertos
 python3 -m src.analisis
 python3 -m pytest
 python3 -m streamlit run app.py --server.address 0.0.0.0 --server.port 8501
 ```
 
 Los CSV de origen usan separador `;`, decimal `,` y codificación `utf-8-sig`. Las versiones de las librerías están fijadas en `requirements.txt`.
+
+---
+
+© 2026 Orlando José León Romero, Leyber David Peñaloza y Johan Cruz. Todos los derechos reservados.

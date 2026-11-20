@@ -18,13 +18,16 @@ from src.backtest import (
 )
 from src.config import (
     DATOS_PROCESADOS,
+    FEATURES_AGREGADOS,
     DOCS,
     HORIZONTES_REPORTE,
     INFORME,
     MEDIA,
     REGIMENES,
+    VARIABLES_NUEVAS,
 )
 from src.data_loader import evaluar_calidad
+from src.exportar_sitio import exportar
 from src.features import cargar_panel
 from src.forecast import construir_proyeccion
 from src.informe import escribir_informe
@@ -85,6 +88,33 @@ def _descriptivos(panel: pd.DataFrame) -> dict[str, dict[str, float]]:
             "maximo": float(serie.max()),
         }
     return salida
+
+
+def evaluar_variables_nuevas(panel: pd.DataFrame) -> pd.DataFrame:
+    """RMSE del Ridge base al sumarle, uno por uno, los datos nuevos.
+
+    Es el mismo backtest expansivo del estudio, con el mismo λ. Cada fila
+    responde una sola pregunta: ¿ese dato baja el error fuera de muestra?
+    """
+    filas: list[dict[str, float | int | str]] = []
+    for clave, (etiqueta, extra) in VARIABLES_NUEVAS.items():
+        columnas = FEATURES_AGREGADOS + tuple(extra)
+        if any(columna not in panel for columna in columnas):
+            continue
+        modelo = RidgeDirecto("ridge_agregados", columnas)
+        predicciones = correr_backtest(panel, [modelo], horizontes=HORIZONTES_REPORTE)
+        for horizonte, grupo in predicciones.groupby("horizonte"):
+            errores = grupo["error"].to_numpy(dtype=float)
+            filas.append(
+                {
+                    "id": clave,
+                    "etiqueta": etiqueta,
+                    "horizonte": int(horizonte),
+                    "n": int(len(errores)),
+                    "rmse": float(np.sqrt(np.mean(errores**2))),
+                }
+            )
+    return pd.DataFrame(filas)
 
 
 def ejecutar(
@@ -154,6 +184,10 @@ def ejecutar(
     _guardar_tabla(metricas, procesado / "metricas.csv")
     cobertura = cobertura_expandida(predicciones)
     _guardar_tabla(cobertura, procesado / "cobertura.csv")
+
+    print("Contraste de los datos nuevos…", flush=True)
+    variables_nuevas = evaluar_variables_nuevas(panel)
+    _guardar_tabla(variables_nuevas, procesado / "variables_nuevas.csv")
 
     print("Proyección de septiembre de 2026…", flush=True)
     sendas = [construir_proyeccion(panel, modelo, predicciones) for modelo in modelos_comparacion()]
@@ -247,8 +281,11 @@ def ejecutar(
         eda=eda,
         graficos=graficos,
         fallos=fallos,
+        variables_nuevas=variables_nuevas,
     )
     print(f"Informe: {informe}", flush=True)
+    if directorio_procesado is None:
+        print(f"Datos de la página: {exportar()}", flush=True)
     return {
         "panel": panel,
         "metricas": metricas,

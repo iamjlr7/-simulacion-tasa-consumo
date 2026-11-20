@@ -21,6 +21,9 @@ if str(RAIZ) not in sys.path:
 
 from src.config import (  # noqa: E402
     DATOS_PROCESADOS,
+    DERECHOS,
+    LEMA_PROYECTO,
+    NOMBRE_PROYECTO,
     ETIQUETA_FEATURE,
     HORIZONTES_REPORTE,
     MEDIA,
@@ -34,7 +37,7 @@ from src.forecast import proyectar_escenario  # noqa: E402
 from src.pruebas import diagnostico_residuales  # noqa: E402
 
 st.set_page_config(
-    page_title="Simulación de la tasa de consumo",
+    page_title=f"{NOMBRE_PROYECTO} · {LEMA_PROYECTO}",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -1014,7 +1017,8 @@ def controles_escenario(panel: pd.DataFrame, modelo_id: str) -> dict[int, float]
 
 
 def main() -> None:
-    st.title("Simulación de la tasa de consumo")
+    st.title(NOMBRE_PROYECTO)
+    st.caption(LEMA_PROYECTO)
 
     faltan = [
         nombre
@@ -1089,6 +1093,7 @@ def main() -> None:
         seccion_estudio(datos, panel)
 
     st.caption(AVISO)
+    st.caption(DERECHOS)
 
 
 if __name__ == "__main__":

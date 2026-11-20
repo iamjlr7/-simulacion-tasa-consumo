@@ -1,0 +1,46 @@
+id,etiqueta,horizonte,n,rmse
+base,Especificación base (seis variables),1,173,0.5327146308972248
+base,Especificación base (seis variables),3,171,0.9606032408910343
+base,Especificación base (seis variables),6,168,1.755850672292506
+base,Especificación base (seis variables),12,162,3.177806014654397
+base,Especificación base (seis variables),24,150,3.7727091846267715
+tasa_real,+ Tasa real de política,1,173,0.5243808468524951
+tasa_real,+ Tasa real de política,3,171,0.927499606591649
+tasa_real,+ Tasa real de política,6,168,1.7463716544770898
+tasa_real,+ Tasa real de política,12,162,3.3554128145735245
+tasa_real,+ Tasa real de política,24,150,3.6709144706659993
+trm_anual,+ Depreciación anual del peso (TRM),1,173,0.5349985506903694
+trm_anual,+ Depreciación anual del peso (TRM),3,171,0.9732530459713336
+trm_anual,+ Depreciación anual del peso (TRM),6,168,1.7840310322885249
+trm_anual,+ Depreciación anual del peso (TRM),12,162,3.1920432682689155
+trm_anual,+ Depreciación anual del peso (TRM),24,150,3.8076362708150846
+trm_trimestre,+ Depreciación a 3 meses (TRM),1,173,0.530324986094522
+trm_trimestre,+ Depreciación a 3 meses (TRM),3,171,0.9633882584809871
+trm_trimestre,+ Depreciación a 3 meses (TRM),6,168,1.7682835921643139
+trm_trimestre,+ Depreciación a 3 meses (TRM),12,162,3.194889550092947
+trm_trimestre,+ Depreciación a 3 meses (TRM),24,150,3.805729246262946
+fed,+ Diferencial frente a la Fed,1,173,0.534953064674877
+fed,+ Diferencial frente a la Fed,3,171,0.9701648630400168
+fed,+ Diferencial frente a la Fed,6,168,1.7631388500401353
+fed,+ Diferencial frente a la Fed,12,162,3.138790452956856
+fed,+ Diferencial frente a la Fed,24,150,4.337261576010521
+fed_cambio,+ Diferencial y variación de la Fed,1,173,0.5338750425486325
+fed_cambio,+ Diferencial y variación de la Fed,3,171,0.9728874299930185
+fed_cambio,+ Diferencial y variación de la Fed,6,168,1.8035433778579262
+fed_cambio,+ Diferencial y variación de la Fed,12,162,3.2117538595938595
+fed_cambio,+ Diferencial y variación de la Fed,24,150,4.364487541720995
+inflacion,+ Inflación anual,1,173,0.5372189904671767
+inflacion,+ Inflación anual,3,171,0.9997598884127775
+inflacion,+ Inflación anual,6,168,1.8618255469840483
+inflacion,+ Inflación anual,12,162,3.330390415642946
+inflacion,+ Inflación anual,24,150,3.9987527812134367
+usura,+ Holgura frente a la usura,1,173,0.5547024045687753
+usura,+ Holgura frente a la usura,3,171,1.046831579310836
+usura,+ Holgura frente a la usura,6,168,1.9559700954824355
+usura,+ Holgura frente a la usura,12,162,3.4596876605932936
+usura,+ Holgura frente a la usura,24,150,5.313124930115488
+todo,"+ TRM, Fed e inflación a la vez",1,173,0.5418414750133131
+todo,"+ TRM, Fed e inflación a la vez",3,171,1.0249878064970845
+todo,"+ TRM, Fed e inflación a la vez",6,168,1.938763180240208
+todo,"+ TRM, Fed e inflación a la vez",12,162,3.4652293945472046
+todo,"+ TRM, Fed e inflación a la vez",24,150,4.511637118732641

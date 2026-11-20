@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from src.config import FEATURES_AGREGADOS
-from src.data_loader import construir_base
+from src.data_loader import cargar_externos, construir_base
 
 
 def agregar_transformaciones(panel: pd.DataFrame) -> pd.DataFrame:
@@ -28,12 +28,27 @@ def agregar_transformaciones(panel: pd.DataFrame) -> pd.DataFrame:
         salida[nombre] = 100.0 * np.log(salida[columna] / salida[columna].shift(12))
     salida["brecha_inflacion"] = salida["inflacion"] - salida["meta"]
     salida["inflacion_ipc"] = 100.0 * (salida["ipc"] / salida["ipc"].shift(12) - 1.0)
+    salida["tasa_real"] = salida["pol"] - salida["inflacion"]
+    if "trm" in salida:
+        salida["g_trm"] = 100.0 * np.log(salida["trm"] / salida["trm"].shift(12))
+        salida["dtrm3"] = 100.0 * np.log(salida["trm"] / salida["trm"].shift(3))
+    if "fed" in salida:
+        salida["dif_fed"] = salida["pol"] - salida["fed"]
+        salida["dfed3"] = salida["fed"] - salida["fed"].shift(3)
+    if "usura" in salida:
+        salida["holgura_usura"] = salida["usura"] - salida["y"]
     return salida
 
 
 def cargar_panel(directorio: Path | str | None = None) -> pd.DataFrame:
-    """Devuelve el panel de modelado, con transformaciones y sin octubre de 2026."""
-    return agregar_transformaciones(construir_base(directorio))
+    """Devuelve el panel de modelado, con transformaciones y sin octubre de 2026.
+
+    A los niveles del Banco de la República se les unen la TRM, la tasa de la
+    Reserva Federal y la usura cuando la carpeta ``externos`` está presente.
+    """
+    base = construir_base(directorio)
+    externos = cargar_externos(base.index, None if directorio is None else Path(directorio) / "externos")
+    return agregar_transformaciones(base.join(externos))
 
 
 def pares_directos(

@@ -3,41 +3,324 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Simulación de la tasa de consumo</title>
+  <title>TasaViva · Simulador de la tasa de crédito de consumo en Colombia</title>
+  <meta name="description" content="TasaViva proyecta y simula en tiempo real la tasa de interés del crédito de consumo en Colombia con datos del Banco de la República, la Superintendencia Financiera y la Reserva Federal.">
+  <meta name="author" content="Orlando José León Romero, Leyber David Peñaloza, Johan Cruz">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23173a7a'/%3E%3Cpath d='M5 20h5l3-9 5 13 3-8h6' fill='none' stroke='%2334d399' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="estilos.css">
 </head>
 <body>
-  <div class="marco">
-    <aside>
-      <h2>Tus datos</h2>
-      <label for="modelo">Modelo</label>
-      <select id="modelo"></select>
-      <label for="horizonte">Meses hacia adelante: <span id="horizonte-valor">12</span></label>
-      <input id="horizonte" type="range" min="1" max="24" value="12">
-      <label for="desde">Desde</label>
-      <input id="desde" type="date">
-      <label for="hasta">Hasta</label>
-      <input id="hasta" type="date">
-      <label class="fila"><input id="politica" type="checkbox" checked> Superponer la tasa de política</label>
-      <div class="fila" style="margin-top:0.6rem">
-        <label class="fila"><input type="radio" name="vista" value="niveles" checked> Niveles</label>
-        <label class="fila"><input type="radio" name="vista" value="crecimiento"> Crecimiento anual</label>
+  <a class="salto" href="#resumen">Saltar al contenido</a>
+
+  <header class="barra">
+    <div class="barra-in">
+      <a class="marca" href="#resumen" aria-label="TasaViva, inicio">
+        <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
+          <rect width="32" height="32" rx="8" class="marca-fondo"/>
+          <path d="M5 20h5l3-9 5 13 3-8h6" fill="none" class="marca-pulso" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Tasa<b>Viva</b></span>
+      </a>
+      <nav class="nav" aria-label="Secciones">
+        <a href="#resumen">Resumen</a>
+        <a href="#simulador">Simulador</a>
+        <a href="#credito">Tu crédito</a>
+        <a href="#mercado">Mercado en vivo</a>
+        <a href="#historia">Historia</a>
+        <a href="#confianza">Confiabilidad</a>
+        <a href="#metodo">Método</a>
+      </nav>
+      <div class="barra-der">
+        <span class="vivo" id="chip-vivo" data-estado="cargando" title="Estado de las fuentes en vivo">
+          <i></i><span id="chip-vivo-texto">Conectando…</span>
+        </span>
+        <button class="icono" id="tema" type="button" aria-label="Cambiar entre tema claro y oscuro" title="Tema claro u oscuro">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" fill="currentColor"/></svg>
+        </button>
       </div>
-      <p class="nota">El rango y la vista no cambian tu proyección.</p>
-    </aside>
-    <main>
-      <h1>Simulación de la tasa de consumo</h1>
-      <p class="resumen" id="resumen"></p>
-      <div class="secciones" id="secciones">
-        <label class="fila"><input type="radio" name="seccion" value="historial"> Historial</label>
-        <label class="fila"><input type="radio" name="seccion" value="proyeccion" checked> Proyección</label>
-        <label class="fila"><input type="radio" name="seccion" value="desempeno"> Desempeño</label>
-        <label class="fila"><input type="radio" name="seccion" value="estudio"> Estudio</label>
+    </div>
+  </header>
+
+  <main>
+    <!-- ================= RESUMEN ================= -->
+    <section id="resumen" class="seccion heroe">
+      <div class="heroe-texto">
+        <p class="sobre">Crédito de consumo · Colombia</p>
+        <h1 id="titular">Proyección de la tasa de crédito de consumo</h1>
+        <p class="bajada" id="bajada"></p>
+        <div class="pasos" id="pasos" aria-label="Proyección por plazo"></div>
+        <p class="seguimiento" id="seguimiento"></p>
+        <div class="acciones">
+          <a class="boton primario" href="#simulador">Abrir el simulador</a>
+          <a class="boton" href="#credito">Calcular mi cuota</a>
+        </div>
       </div>
-      <div id="contenido"></div>
-      <p class="pie">Proyección estadística. No es asesoría financiera.</p>
-    </main>
-  </div>
+      <figure class="tarjeta heroe-grafico">
+        <figcaption>
+          <strong>Tasa observada y proyección</strong>
+          <span>Efectiva anual, promedio del mes. La franja es el rango del 80 %.</span>
+        </figcaption>
+        <div class="grafico" id="g-heroe"></div>
+      </figure>
+    </section>
+
+    <section class="seccion" aria-labelledby="t-indicadores">
+      <div class="encabezado">
+        <h2 id="t-indicadores">Indicadores en tiempo real</h2>
+        <p>Se consultan a las fuentes oficiales al abrir la página y cada cinco minutos.</p>
+        <p id="reloj" class="reloj"></p>
+      </div>
+      <div class="fichas" id="fichas"></div>
+    </section>
+
+    <!-- ================= SIMULADOR ================= -->
+    <section id="simulador" class="seccion">
+      <div class="encabezado">
+        <h2>Simulador en tiempo real</h2>
+        <p>Mueve las condiciones y mira cómo cambia la proyección al instante. Cada línea fina es un futuro posible: la proyección más el error que el modelo cometió de verdad en un episodio del pasado.</p>
+      </div>
+      <div class="sim">
+        <form class="tarjeta controles" id="controles" onsubmit="return false">
+          <fieldset>
+            <legend>Qué simular</legend>
+            <label for="s-modelo">Modelo</label>
+            <select id="s-modelo"></select>
+            <p class="ayuda" id="s-modelo-ayuda"></p>
+            <label for="s-h">Plazo: <output id="s-h-val"></output></label>
+            <input id="s-h" type="range" min="1" max="24" step="1" value="12">
+            <div class="marcas"><span>1 mes</span><span>12</span><span>24 meses</span></div>
+          </fieldset>
+          <fieldset id="escenario">
+            <legend>¿Y si las condiciones fueran otras?</legend>
+            <label for="s-pol">Tasa de política: <output id="s-pol-val"></output></label>
+            <input id="s-pol" type="range" min="-300" max="300" step="25" value="0">
+            <div class="marcas"><span>−3 pp</span><span>hoy</span><span>+3 pp</span></div>
+            <label for="s-m2">Crecimiento anual de M2: <output id="s-m2-val"></output></label>
+            <input id="s-m2" type="range">
+            <label for="s-inf">Inflación anual: <output id="s-inf-val"></output></label>
+            <input id="s-inf" type="range">
+            <p class="ayuda" id="s-esc-ayuda"></p>
+            <button class="boton chico" type="button" id="s-restablecer">Volver a las condiciones reales</button>
+          </fieldset>
+          <fieldset>
+            <legend>Reproducción</legend>
+            <label for="s-vel">Velocidad</label>
+            <input id="s-vel" type="range" min="1" max="5" step="1" value="3">
+            <div class="marcas"><span>Lenta</span><span></span><span>Rápida</span></div>
+            <div class="fila-botones">
+              <button class="boton primario" type="button" id="s-play">Pausar</button>
+              <button class="boton" type="button" id="s-reiniciar">Reiniciar</button>
+            </div>
+          </fieldset>
+        </form>
+
+        <div class="sim-principal">
+          <div class="tarjeta">
+            <div class="cabecera-grafico">
+              <div>
+                <strong id="sim-titulo">Tasa de crédito de consumo</strong>
+                <span id="sim-sub"></span>
+              </div>
+              <div class="progreso" aria-live="off">
+                <span id="sim-cuenta" class="mono"></span>
+                <div class="progreso-barra"><i id="sim-barra"></i></div>
+              </div>
+            </div>
+            <div class="leyenda" id="sim-leyenda"></div>
+            <div class="grafico" id="g-sim"></div>
+            <p class="pie-grafico" id="sim-episodio"></p>
+          </div>
+          <div class="resultados" id="sim-resultados"></div>
+          <div class="tarjeta">
+            <div class="cabecera-grafico">
+              <div>
+                <strong id="hist-titulo">Dónde termina la tasa</strong>
+                <span id="hist-sub"></span>
+              </div>
+              <label class="umbral">Probabilidad de superar
+                <input id="s-umbral" type="number" step="0.25" min="0" max="60"> %
+              </label>
+            </div>
+            <div class="grafico" id="g-hist"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= CRÉDITO ================= -->
+    <section id="credito" class="seccion">
+      <div class="encabezado">
+        <h2>¿Qué significa para tu crédito?</h2>
+        <p>Compara la cuota de un crédito de libre inversión con la tasa de hoy y con la que el modelo proyecta para cuando pienses pedirlo.</p>
+      </div>
+      <div class="credito">
+        <form class="tarjeta controles" onsubmit="return false">
+          <label for="c-monto">Monto del crédito</label>
+          <div class="campo-moneda"><span>$</span><input id="c-monto" type="text" inputmode="numeric" value="10.000.000" autocomplete="off"></div>
+          <label for="c-plazo">Plazo: <output id="c-plazo-val"></output></label>
+          <input id="c-plazo" type="range" min="6" max="84" step="6" value="36">
+          <div class="marcas"><span>6 meses</span><span></span><span>7 años</span></div>
+          <label for="c-cuando">¿Cuándo lo pedirías?</label>
+          <select id="c-cuando"></select>
+          <p class="ayuda">La tasa promedio del mercado no es la que te ofrecerá tu banco: depende de tu perfil. Úsala como referencia de hacia dónde va el costo.</p>
+        </form>
+        <div class="credito-salida" id="c-salida"></div>
+      </div>
+    </section>
+
+    <!-- ================= MERCADO ================= -->
+    <section id="mercado" class="seccion">
+      <div class="encabezado">
+        <h2>Mercado en vivo</h2>
+        <p>Lo que cobraron las entidades por créditos de libre inversión en la semana más reciente que publica la Superintendencia Financiera.</p>
+      </div>
+      <div class="rejilla dos">
+        <div class="tarjeta">
+          <div class="cabecera-grafico">
+            <div>
+              <strong>Tasa de libre inversión por entidad</strong>
+              <span id="bancos-sub"></span>
+            </div>
+            <div class="segmento" role="group" aria-label="Orden">
+              <button type="button" data-orden="monto" class="activo">Más desembolsos</button>
+              <button type="button" data-orden="tasa">Menor tasa</button>
+            </div>
+          </div>
+          <div id="g-bancos" class="barras"></div>
+          <p class="pie-grafico" id="bancos-pie"></p>
+        </div>
+        <div class="columna">
+          <div class="tarjeta">
+            <div class="cabecera-grafico">
+              <div>
+                <strong>Semana a semana</strong>
+                <span>Libre inversión (Superintendencia) frente a consumo total (Banco de la República)</span>
+              </div>
+            </div>
+            <div class="leyenda" id="sem-leyenda"></div>
+            <div class="grafico" id="g-semanal"></div>
+          </div>
+          <div class="tarjeta">
+            <div class="cabecera-grafico">
+              <div>
+                <strong>Dólar (TRM), último año</strong>
+                <span id="trm-sub">Pesos por dólar</span>
+              </div>
+            </div>
+            <div class="grafico" id="g-trm"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= HISTORIA ================= -->
+    <section id="historia" class="seccion">
+      <div class="encabezado">
+        <h2>Historia</h2>
+        <p>Veinticuatro años de la tasa de consumo junto a lo que la mueve. Pasa el cursor para leer cada mes.</p>
+      </div>
+      <div class="tarjeta">
+        <div class="cabecera-grafico">
+          <div class="chips" id="h-series" role="group" aria-label="Series visibles"></div>
+          <div class="segmento" id="h-rango" role="group" aria-label="Periodo">
+            <button type="button" data-anios="5">5 años</button>
+            <button type="button" data-anios="10">10 años</button>
+            <button type="button" data-anios="0" class="activo">Todo</button>
+          </div>
+        </div>
+        <div class="grafico" id="g-historia"></div>
+      </div>
+      <div class="rejilla dos">
+        <div class="tarjeta">
+          <div class="cabecera-grafico"><div><strong>Dinero en circulación</strong><span>Crecimiento anual de M1, M2 y M3, en porcentaje</span></div></div>
+          <div class="leyenda" id="dinero-leyenda"></div>
+          <div class="grafico" id="g-dinero"></div>
+        </div>
+        <div class="tarjeta">
+          <div class="cabecera-grafico"><div><strong>Dólar (TRM)</strong><span>Promedio mensual, pesos por dólar</span></div></div>
+          <div class="grafico" id="g-trm-hist"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= CONFIABILIDAD ================= -->
+    <section id="confianza" class="seccion">
+      <div class="encabezado">
+        <h2>¿Qué tan confiable es?</h2>
+        <p>El modelo se puso a prueba mes a mes desde mayo de 2012, usando en cada fecha solo lo que se sabía entonces. Esto es lo que acertó y lo que no.</p>
+      </div>
+      <div class="resultados" id="conf-fichas"></div>
+      <div class="rejilla dos">
+        <div class="tarjeta">
+          <div class="cabecera-grafico"><div><strong>Error típico según el plazo</strong><span>Puntos porcentuales (RMSE). Más abajo es mejor.</span></div></div>
+          <div class="leyenda" id="rmse-leyenda"></div>
+          <div class="grafico" id="g-rmse"></div>
+        </div>
+        <div class="tarjeta">
+          <div class="cabecera-grafico"><div><strong>¿Los datos nuevos mejoran el pronóstico?</strong><span>Cambio del error al sumar cada dato al modelo base. Verde: mejora.</span></div></div>
+          <div class="tabla-envoltura" id="t-nuevas"></div>
+        </div>
+      </div>
+      <div class="tarjeta">
+        <div class="cabecera-grafico"><div><strong>Todos los modelos comparados</strong><span>Error típico en puntos porcentuales, del mismo ejercicio. El menor de cada plazo va resaltado.</span></div></div>
+        <div class="tabla-envoltura" id="t-modelos"></div>
+      </div>
+    </section>
+
+    <!-- ================= MÉTODO ================= -->
+    <section id="metodo" class="seccion">
+      <div class="encabezado">
+        <h2>Cómo funciona</h2>
+        <p>Cuatro pasos, sin cajas negras.</p>
+      </div>
+      <ol class="pasos-metodo">
+        <li class="tarjeta"><b>1</b><h3>Datos oficiales</h3><p>Series del Banco de la República, la Superintendencia Financiera y la Reserva Federal se llevan a una sola tabla mensual desde mayo de 2002.</p></li>
+        <li class="tarjeta"><b>2</b><h3>Un modelo por plazo</h3><p>Para cada plazo de 1 a 24 meses, una regresión Ridge aprende cuánto suele cambiar la tasa según su inercia, su distancia frente a la tasa de política y el crecimiento del dinero.</p></li>
+        <li class="tarjeta"><b>3</b><h3>Examen sin trampa</h3><p>Se repite el pronóstico en cada mes desde 2012 con la información de ese momento y se compara con lo que ocurrió. De ahí salen los errores.</p></li>
+        <li class="tarjeta"><b>4</b><h3>Simulación</h3><p>Esos errores reales se aplican a la proyección de hoy. El resultado no es una cifra, es un abanico de futuros posibles con su probabilidad.</p></li>
+      </ol>
+      <div class="rejilla dos">
+        <div class="tarjeta">
+          <div class="cabecera-grafico"><div><strong>Fuentes</strong><span>Todas públicas y oficiales</span></div></div>
+          <div class="tabla-envoltura" id="t-fuentes"></div>
+        </div>
+        <div class="tarjeta">
+          <div class="cabecera-grafico"><div><strong>Qué pesa en el modelo</strong><span id="coef-sub"></span></div></div>
+          <div id="g-coef" class="barras"></div>
+          <h3 class="sub">Límites que conviene conocer</h3>
+          <ul class="lista">
+            <li>Es una proyección estadística: describe lo que suele pasar, no lo que va a pasar.</li>
+            <li>No anticipa decisiones futuras del Banco de la República ni choques inesperados.</li>
+            <li>El rango se ensancha con el plazo: a 12 meses la incertidumbre es alta.</li>
+            <li>El control de condiciones cambia el punto de partida; no supone una senda futura.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="pie">
+    <div class="pie-in">
+      <div>
+        <div class="marca pie-marca">
+          <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
+            <rect width="32" height="32" rx="8" class="marca-fondo"/>
+            <path d="M5 20h5l3-9 5 13 3-8h6" fill="none" class="marca-pulso" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>Tasa<b>Viva</b></span>
+        </div>
+        <p>Simulador en tiempo real de la tasa de crédito de consumo en Colombia.</p>
+        <p class="aviso">Proyección estadística con fines académicos. No es asesoría financiera ni una tasa oficial.</p>
+      </div>
+      <div class="pie-der">
+        <p id="pie-datos"></p>
+        <p class="derechos">© 2026 Orlando José León Romero, Leyber David Peñaloza y Johan Cruz. Todos los derechos reservados.</p>
+      </div>
+    </div>
+  </footer>
+
+  <div id="tip" class="tip" role="status" aria-hidden="true"></div>
+
   <script src="datos.js"></script>
   <script src="app.js"></script>
 </body>

@@ -29,6 +29,7 @@ from statsmodels.tsa.vector_ar.vecm import VECM
 
 from src.config import (
     FEATURES_AGREGADOS,
+    FEATURES_REAL,
     FEATURES_TASA_POLITICA,
     MIN_FILAS_RIDGE,
     NOMBRES_MODELO,
@@ -485,6 +486,30 @@ class ModeloGradiente(ModeloBase):
         return niveles
 
 
+class Combinado(ModeloBase):
+    """Promedio simple de dos Ridge directos: con agregados y con tasa real.
+
+    Los pesos son iguales y quedaron fijos antes de mirar el error. No se
+    optimizan con el backtest.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("combinado")
+        self.partes: list[ModeloBase] = [
+            RidgeDirecto("ridge_agregados", FEATURES_AGREGADOS),
+            RidgeDirecto("ridge_real", FEATURES_REAL),
+        ]
+
+    def _proyectar(
+        self,
+        panel: pd.DataFrame,
+        origen_iloc: int,
+        horizontes: list[int],
+    ) -> dict[int, float]:
+        sendas = [parte.proyectar(panel, origen_iloc, horizontes) for parte in self.partes]
+        return {h: float(np.mean([senda[h] for senda in sendas])) for h in horizontes}
+
+
 def modelos_comparacion() -> list[ModeloBase]:
     """Todos los modelos del mismo backtest, en el orden del informe."""
     return [
@@ -501,6 +526,8 @@ def modelos_comparacion() -> list[ModeloBase]:
         ModeloGradiente(),
         RidgeDirecto("ridge_inflacion", FEATURES_AGREGADOS + ("inflacion",)),
         RidgeDirecto("ridge_brecha", FEATURES_AGREGADOS + ("brecha_inflacion",)),
+        RidgeDirecto("ridge_real", FEATURES_REAL),
+        Combinado(),
     ]
 
 

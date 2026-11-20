@@ -1,563 +1,1324 @@
-const D = window.DATOS;
-const HORIZONTES = [1, 3, 6, 12, 24];
-const ORDEN = Object.keys(D.nombres);
-const ETIQUETA = {
-  dy3: "Variación a 3 meses de la tasa",
-  spread: "Spread frente a la política",
-  dpol3: "Variación a 3 meses de la política",
-  g_m1: "Crecimiento anual de M1",
-  g_m2: "Crecimiento anual de M2",
-  g_m3: "Crecimiento anual de M3",
-};
+/* TasaViva — lógica de la página.
+   Todo corre en el navegador: la proyección se recalcula con los coeficientes
+   exportados por el estudio y los indicadores se consultan a las fuentes
+   oficiales. Si no hay red, se usan los datos guardados en datos.js. */
+(() => {
+  "use strict";
 
-function coma(valor, decimales = 2) {
-  if (valor === null || valor === undefined || Number.isNaN(Number(valor))) return "—";
-  return Number(valor).toFixed(decimales).replace(".", ",");
-}
+  const D = window.DATOS;
+  const $ = (selector, raiz = document) => raiz.querySelector(selector);
+  const $$ = (selector, raiz = document) => Array.from(raiz.querySelectorAll(selector));
 
-function textoP(valor) {
-  if (valor === null || valor === undefined || Number.isNaN(Number(valor))) return "—";
-  if (Number(valor) < 0.001) return "< 0,001";
-  return coma(valor, 3);
-}
+  const PRINCIPAL = "ridge_agregados";
+  const P = D.panel;
+  const N = P.fecha.length;
+  const Y0 = P.y[N - 1];
+  const ORIGEN = D.meta.origen;
+  const FECHAS = D.meta.fechas_proyeccion;
+  const HMAX = D.meta.horizonte_max;
+  const RIDGE_ESCENARIO = ["ridge_agregados", "ridge_real", "combinado", "ridge_tasa_politica"];
+  const RECOMENDADOS = ["ridge_agregados", "combinado", "ridge_real", "paseo_aleatorio"];
+  const MOVIMIENTO_REDUCIDO = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-function lectura(adf, kpss) {
-  const adfR = adf <= 0.05;
-  const kpssR = kpss <= 0.05;
-  if (!adfR && kpssR) return "Compatible con raíz unitaria";
-  if (adfR && !kpssR) return "Compatible con estacionariedad";
-  if (adfR && kpssR) return "Señales mixtas";
-  return "Ninguna prueba rechaza su nula al 5 %";
-}
+  /* ------------------------------------------------------------------ */
+  /* Formato                                                             */
+  /* ------------------------------------------------------------------ */
 
-function buscar(lista, modelo, horizonte) {
-  return lista.find((fila) => fila.modelo === modelo && fila.horizonte === horizonte);
-}
+  const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+  const MESES_C = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 
-function senda(modelo) {
-  return D.proyeccion.filter((fila) => fila.modelo === modelo).sort((a, b) => a.horizonte - b.horizonte);
-}
-
-function mes(fecha) {
-  return fecha.slice(0, 7);
-}
-
-function enRango(fecha, desde, hasta) {
-  return mes(fecha) >= mes(desde) && mes(fecha) <= mes(hasta);
-}
-
-function tabla(columnas, filas) {
-  const cabeza = columnas.map((columna) => `<th>${columna}</th>`).join("");
-  const cuerpo = filas.map((fila) => `<tr>${fila.map((celda) => `<td>${celda}</td>`).join("")}</tr>`).join("");
-  return `<table><thead><tr>${cabeza}</tr></thead><tbody>${cuerpo}</tbody></table>`;
-}
-
-function colorBanda(tono) {
-  return tono;
-}
-
-function grafico(series, bandas, titulo, ejeY) {
-  const ancho = 860;
-  const alto = 380;
-  const izq = 64;
-  const der = 16;
-  const arr = 28;
-  const aba = 36;
-  const puntos = [];
-  series.forEach((serie) => {
-    serie.x.forEach((x, i) => {
-      if (serie.y[i] === null || serie.y[i] === undefined) return;
-      puntos.push([Date.parse(x), serie.y[i]]);
-    });
-  });
-  (bandas || []).forEach((banda) => {
-    banda.bajo.forEach((y, i) => {
-      if (y === null || banda.alto[i] === null) return;
-      puntos.push([Date.parse(banda.x[i]), y], [Date.parse(banda.x[i]), banda.alto[i]]);
-    });
-  });
-  if (!puntos.length) return `<p>Ese rango no contiene ningún cierre mensual.</p>`;
-  const xs = puntos.map((punto) => punto[0]);
-  const ys = puntos.map((punto) => punto[1]);
-  const x0 = Math.min(...xs);
-  const x1 = Math.max(...xs);
-  let y0 = Math.min(...ys);
-  let y1 = Math.max(...ys);
-  const holgura = (y1 - y0) * 0.06 || 1;
-  y0 -= holgura;
-  y1 += holgura;
-  const sx = (x) => izq + ((x - x0) / (x1 - x0 || 1)) * (ancho - izq - der);
-  const sy = (y) => arr + ((y1 - y) / (y1 - y0 || 1)) * (alto - arr - aba);
-  const ticksY = 5;
-  let ejes = "";
-  for (let i = 0; i < ticksY; i += 1) {
-    const valor = y0 + ((y1 - y0) * i) / (ticksY - 1);
-    const y = sy(valor);
-    const mostrado = Math.abs(valor) < 0.05 ? 0 : valor;
-    const texto = Math.abs(mostrado) >= 1000 ? Math.round(mostrado).toLocaleString("es-CO") : coma(mostrado, Math.abs(mostrado) >= 100 ? 0 : 1);
-    ejes += `<line x1="${izq}" x2="${ancho - der}" y1="${y}" y2="${y}" stroke="#e6e7e8"/>`;
-    ejes += `<text x="${izq - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="#5c656d">${texto}</text>`;
-  }
-  const anios = [];
-  const inicio = new Date(x0);
-  const fin = new Date(x1);
-  for (let anio = inicio.getUTCFullYear(); anio <= fin.getUTCFullYear(); anio += 1) {
-    if ((fin.getUTCFullYear() - inicio.getUTCFullYear()) > 8 && anio % 5 !== 0) continue;
-    const t = Date.parse(`${anio}-01-01`);
-    if (t < x0 || t > x1) continue;
-    anios.push(`<text x="${sx(t)}" y="${alto - 12}" text-anchor="middle" font-size="11" fill="#5c656d">${anio}</text>`);
-  }
-  let areas = "";
-  (bandas || []).forEach((banda) => {
-    const arriba = [];
-    const abajo = [];
-    banda.x.forEach((x, i) => {
-      if (banda.bajo[i] === null || banda.alto[i] === null) return;
-      const px = sx(Date.parse(x));
-      arriba.push(`${px},${sy(banda.alto[i])}`);
-      abajo.push(`${px},${sy(banda.bajo[i])}`);
-    });
-    if (arriba.length) areas += `<polygon points="${arriba.join(" ")} ${abajo.reverse().join(" ")}" fill="${banda.color}" stroke="none"><title>${banda.nombre}</title></polygon>`;
-  });
-  let trazos = "";
-  series.forEach((serie) => {
-    let camino = "";
-    let abierto = false;
-    serie.x.forEach((x, i) => {
-      const valor = serie.y[i];
-      if (valor === null || valor === undefined) {
-        abierto = false;
-        return;
-      }
-      camino += `${abierto ? "L" : "M"}${sx(Date.parse(x))},${sy(valor)}`;
-      abierto = true;
-    });
-    const dash = serie.dash ? ` stroke-dasharray="${serie.dash}"` : "";
-    trazos += `<path d="${camino}" fill="none" stroke="${serie.color}" stroke-width="${serie.ancho || 2}"${dash}/>`;
-    if (serie.puntos) {
-      serie.x.forEach((x, i) => {
-        if (serie.y[i] === null) return;
-        trazos += `<circle cx="${sx(Date.parse(x))}" cy="${sy(serie.y[i])}" r="4.5" fill="${serie.color}"/>`;
-      });
-    }
-  });
-  const leyenda = series.map((serie) => `<span style="color:${serie.color};margin-right:1rem">${serie.nombre}</span>`).join("");
-  return `<div class="grafico"><svg viewBox="0 0 ${ancho} ${alto}" role="img" aria-label="${titulo}">
-    <text x="${izq}" y="16" font-size="13" font-weight="600">${titulo}</text>
-    ${ejes}${anios.join("")}${areas}${trazos}
-    <text x="16" y="${alto / 2}" font-size="11" fill="#5c656d" transform="rotate(-90 16 ${alto / 2})">${ejeY}</text>
-  </svg><p>${leyenda}</p></div>`;
-}
-
-function lineasIndice(series, titulo, ejeX) {
-  const ancho = 860;
-  const alto = 320;
-  const izq = 56;
-  const der = 16;
-  const arr = 28;
-  const aba = 36;
-  const n = series[0].y.length;
-  const ys = series.flatMap((serie) => serie.y);
-  let y0 = Math.min(...ys);
-  let y1 = Math.max(...ys);
-  const holgura = (y1 - y0) * 0.08 || 0.05;
-  y0 -= holgura;
-  y1 += holgura;
-  const sx = (i) => izq + (i / (n - 1)) * (ancho - izq - der);
-  const sy = (y) => arr + ((y1 - y) / (y1 - y0)) * (alto - arr - aba);
-  let ejes = "";
-  for (let k = 0; k < 5; k += 1) {
-    const valor = y0 + ((y1 - y0) * k) / 4;
-    const y = sy(valor);
-    ejes += `<line x1="${izq}" x2="${ancho - der}" y1="${y}" y2="${y}" stroke="#e6e7e8"/>`;
-    ejes += `<text x="${izq - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="#5c656d">${coma(valor, 2)}</text>`;
-  }
-  let marcas = "";
-  for (let i = 0; i < n; i += 3) {
-    marcas += `<text x="${sx(i)}" y="${alto - 12}" text-anchor="middle" font-size="11" fill="#5c656d">${i}</text>`;
-  }
-  let trazos = "";
-  series.forEach((serie) => {
-    const camino = serie.y.map((valor, i) => `${i ? "L" : "M"}${sx(i)},${sy(valor)}`).join("");
-    trazos += `<path d="${camino}" fill="none" stroke="${serie.color}" stroke-width="2"/>`;
-  });
-  const leyenda = series.map((serie) => `<span style="color:${serie.color};margin-right:1rem">${serie.nombre}</span>`).join("");
-  return `<div class="grafico"><svg viewBox="0 0 ${ancho} ${alto}" role="img" aria-label="${titulo}">
-    <text x="${izq}" y="16" font-size="13" font-weight="600">${titulo}</text>
-    ${ejes}${marcas}${trazos}
-    <text x="${ancho / 2}" y="${alto - 2}" text-anchor="middle" font-size="11" fill="#5c656d">${ejeX}</text>
-  </svg><p>${leyenda}</p></div>`;
-}
-
-function barras(pares, titulo) {
-  const maximo = Math.max(...pares.map((par) => par.valor));
-  const filas = pares.map((par) => `<div style="display:grid;grid-template-columns:240px 1fr 64px;gap:8px;align-items:center;margin:3px 0"><span>${par.nombre}</span><div style="background:#e6e7e8"><div style="background:#243038;height:12px;width:${(par.valor / maximo) * 100}%"></div></div><span>${coma(par.valor, 3)}</span></div>`).join("");
-  return `<h3>${titulo}</h3>${filas}`;
-}
-
-function estado() {
-  return {
-    modelo: document.getElementById("modelo").value,
-    horizonte: Number(document.getElementById("horizonte").value),
-    desde: document.getElementById("desde").value,
-    hasta: document.getElementById("hasta").value,
-    politica: document.getElementById("politica").checked,
-    vista: document.querySelector('input[name="vista"]:checked').value,
-    seccion: document.querySelector('input[name="seccion"]:checked').value,
+  const num = (v, d = 2) => (v === null || v === undefined || !Number.isFinite(Number(v)))
+    ? "—"
+    : Number(v).toLocaleString("es-CO", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const pct = (v, d = 2) => `${num(v, d)} %`;
+  const signo = (v) => (v > 0 ? "+" : v < 0 ? "−" : "");
+  const pp = (v, d = 2) => `${signo(v)}${num(Math.abs(v), d)} pp`;
+  const pesos = (v) => `$ ${Math.round(v).toLocaleString("es-CO")}`;
+  const pesosCortos = (v) => {
+    if (v >= 1e12) return `$ ${num(v / 1e12, 2)} billones`;
+    if (v >= 1e9) return `$ ${num(v / 1e9, 0)} mil millones`;
+    if (v >= 1e6) return `$ ${num(v / 1e6, 0)} millones`;
+    return pesos(v);
   };
-}
+  const ms = (iso) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10));
+  const partes = (t) => { const f = new Date(t); return [f.getUTCFullYear(), f.getUTCMonth(), f.getUTCDate()]; };
+  const mesAnio = (t) => { const [a, m] = partes(typeof t === "string" ? ms(t) : t); return `${MESES[m]} de ${a}`; };
+  const mesCorto = (t) => { const [a, m] = partes(typeof t === "string" ? ms(t) : t); return `${MESES_C[m]} ${a}`; };
+  const diaCorto = (t) => { const [a, m, d] = partes(typeof t === "string" ? ms(t) : t); return `${d} ${MESES_C[m]} ${a}`; };
+  const clase = (v) => (v > 0.005 ? "sube" : v < -0.005 ? "baja" : "igual");
+  const flecha = (v) => (v > 0.005 ? "▲" : v < -0.005 ? "▼" : "•");
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-function recorte(campo) {
-  const ui = estado();
-  const fechas = [];
-  const valores = [];
-  D.panel.fecha.forEach((fecha, i) => {
-    if (!enRango(fecha, ui.desde, ui.hasta)) return;
-    fechas.push(fecha);
-    valores.push(D.panel[campo][i]);
-  });
-  return { x: fechas, y: valores };
-}
-
-function seccionHistorial() {
-  const ui = estado();
-  const tasa = recorte("y");
-  const series = [{ nombre: "Crédito de consumo", x: tasa.x, y: tasa.y, color: "#243038" }];
-  if (ui.politica) {
-    const pol = recorte("pol");
-    series.push({ nombre: "Tasa de política", x: pol.x, y: pol.y, color: "#8a6a32" });
+  function cuantil(ordenados, q) {
+    if (!ordenados.length) return NaN;
+    const pos = (ordenados.length - 1) * q;
+    const base = Math.floor(pos);
+    const resto = pos - base;
+    const siguiente = ordenados[Math.min(base + 1, ordenados.length - 1)];
+    return ordenados[base] + (siguiente - ordenados[base]) * resto;
   }
-  if (mes(ui.hasta) >= "2026-09") {
-    series.push({
-      nombre: "Octubre 2026, parcial",
-      x: ["2026-10-31"],
-      y: [D.parcial.tasa],
-      color: "#8a4b32",
-      puntos: true,
-      ancho: 0,
-    });
-  }
-  const crecimiento = ui.vista === "crecimiento";
-  const campos = crecimiento
-    ? [["g_m1", "M1"], ["g_m2", "M2"], ["g_m3", "M3"]]
-    : [["m1", "M1"], ["m2", "M2"], ["m3", "M3"]];
-  const colores = ["#243038", "#2f6f5b", "#8a4b32"];
-  const agregados = campos.map(([campo, nombre], i) => {
-    const serie = recorte(campo);
-    return { nombre, x: serie.x, y: serie.y, color: colores[i] };
-  });
-  const hayCrecimiento = agregados.some((serie) => serie.y.some((valor) => valor !== null));
-  const segundo = crecimiento && !hayCrecimiento
-    ? "<p>El crecimiento anual empieza doce meses después del primer saldo. En esta muestra, el primer valor es el de mayo de 2003. Amplía el rango.</p>"
-    : grafico(
-      agregados,
-      [],
-      crecimiento ? "Crecimiento anual de M1, M2 y M3" : "M1, M2 y M3 en niveles",
-      crecimiento ? "100 × ln(Mₜ / Mₜ₋₁₂)" : "Miles de millones de pesos",
-    );
-  return `
-    <h2>Historial</h2>
-    <p>El rango cuenta por mes: cualquier día del mes muestra el cierre de ese mes. No cambia tu proyección.</p>
-    ${grafico(series, [], "Tasa de crédito de consumo", "Porcentaje efectivo anual")}
-    ${segundo}
-    <p>Los niveles están en miles de millones de pesos. Octubre de 2026 promedia ${coma(D.parcial.tasa)} % con ${D.parcial.n} viernes. Ese punto solo aparece si el rango llega a septiembre de 2026 y no entra al modelo.</p>`;
-}
 
-function seccionProyeccion() {
-  const ui = estado();
-  const todo = senda(ui.modelo);
-  const visible = todo.filter((fila) => fila.horizonte <= ui.horizonte);
-  const fila = todo.find((item) => item.horizonte === ui.horizonte);
-  const origen = D.panel.fecha[D.panel.fecha.length - 1];
-  const tasa = D.panel.y[D.panel.y.length - 1];
-  const desdeHistoria = "2018-09-30";
-  const historia = { x: [], y: [] };
-  D.panel.fecha.forEach((fecha, i) => {
-    if (fecha >= desdeHistoria && enRango(fecha, ui.desde, ui.hasta)) {
-      historia.x.push(fecha);
-      historia.y.push(D.panel.y[i]);
+  /* ------------------------------------------------------------------ */
+  /* Tooltip compartido                                                  */
+  /* ------------------------------------------------------------------ */
+
+  const tip = $("#tip");
+  function mostrarTip(html, x, y) {
+    tip.innerHTML = html;
+    tip.classList.add("visible");
+    const ancho = tip.offsetWidth;
+    const alto = tip.offsetHeight;
+    let izquierda = x + 14;
+    let arriba = y + 14;
+    if (izquierda + ancho > window.innerWidth - 8) izquierda = x - ancho - 14;
+    if (arriba + alto > window.innerHeight - 8) arriba = y - alto - 14;
+    tip.style.left = `${Math.max(8, izquierda)}px`;
+    tip.style.top = `${Math.max(8, arriba)}px`;
+  }
+  function ocultarTip() { tip.classList.remove("visible"); }
+
+  document.addEventListener("pointermove", (evento) => {
+    const fuente = evento.target.closest ? evento.target.closest("[data-tip]") : null;
+    if (fuente) mostrarTip(fuente.dataset.tip, evento.clientX, evento.clientY);
+    else if (!evento.target.closest || !evento.target.closest(".grafico svg")) ocultarTip();
+  });
+
+  /* ------------------------------------------------------------------ */
+  /* Gráfico de líneas genérico (SVG)                                    */
+  /* ------------------------------------------------------------------ */
+
+  function ticksY(minimo, maximo, cuantos = 5) {
+    if (minimo === maximo) { minimo -= 1; maximo += 1; }
+    const bruto = (maximo - minimo) / cuantos;
+    const magnitud = 10 ** Math.floor(Math.log10(bruto));
+    const razon = bruto / magnitud;
+    const paso = (razon < 1.5 ? 1 : razon < 3 ? 2 : razon < 7 ? 5 : 10) * magnitud;
+    const inicio = Math.floor(minimo / paso) * paso;
+    const fin = Math.ceil(maximo / paso) * paso;
+    const salida = [];
+    for (let v = inicio; v <= fin + paso / 2; v += paso) salida.push(Number(v.toFixed(10)));
+    return { ticks: salida, paso };
+  }
+
+  function ticksTiempo(x0, x1, ancho) {
+    const maximo = Math.max(2, Math.floor(ancho / 78));
+    const [a0, m0] = partes(x0);
+    const [a1, m1] = partes(x1);
+    const meses = (a1 - a0) * 12 + (m1 - m0);
+    const salida = [];
+    if (meses > 30) {
+      const paso = [1, 2, 5, 10, 20].find((p) => (a1 - a0) / p <= maximo) || 20;
+      for (let a = Math.ceil(a0 / paso) * paso; a <= a1; a += paso) {
+        const t = Date.UTC(a, 0, 1);
+        if (t >= x0 && t <= x1) salida.push({ t, texto: String(a) });
+      }
+    } else {
+      const paso = [1, 2, 3, 6, 12].find((p) => meses / p <= maximo) || 12;
+      for (let k = 0; k <= meses + 1; k += 1) {
+        const m = m0 + k;
+        if (((m % 12) + 12) % 12 % paso !== 0) continue;
+        const t = Date.UTC(a0, m + 1, 0);
+        if (t < x0 || t > x1) continue;
+        const [a, mm] = partes(t);
+        salida.push({ t, texto: `${MESES_C[mm]} ${String(a).slice(2)}` });
+      }
     }
-  });
-  const fechas = [origen, ...visible.map((item) => item.fecha)];
-  const punto = [tasa, ...visible.map((item) => item.proyeccion)];
-  const banda = (inferior, superior, nombre, color) => ({
-    nombre,
-    x: fechas,
-    bajo: [tasa, ...visible.map((item) => item[inferior])],
-    alto: [tasa, ...visible.map((item) => item[superior])],
-    color,
-  });
-  const filas = visible.map((item) => [
-    item.fecha,
-    String(item.horizonte),
-    coma(item.proyeccion),
-    coma(item.banda_80_inferior),
-    coma(item.banda_80_superior),
-    coma(item.banda_95_inferior),
-    coma(item.banda_95_superior),
-    coma(item.rmse_historico, 3),
-    coma(item.mae_historico, 3),
-  ]);
-  window.__tablaProyeccion = visible;
-  return `
-    <h2>Tu proyección desde septiembre de 2026</h2>
-    <div class="cifras">
-      <div><span>Proyección</span><strong>${coma(fila.proyeccion)} %</strong></div>
-      <div><span>Banda 80 %</span><strong>${coma(fila.banda_80_inferior)} a ${coma(fila.banda_80_superior)}</strong></div>
-      <div><span>Banda 95 %</span><strong>${coma(fila.banda_95_inferior)} a ${coma(fila.banda_95_superior)}</strong></div>
-      <div><span>RMSE de ese horizonte</span><strong>${coma(fila.rmse_historico, 3)} pp</strong></div>
-    </div>
-    ${grafico(
-      [
-        { nombre: "Tasa observada", x: historia.x, y: historia.y, color: "#243038" },
-        { nombre: "Proyección", x: fechas, y: punto, color: "#8a4b32", dash: "5 4" },
-      ],
-      [
-        banda("banda_95_inferior", "banda_95_superior", "Banda 95 %", "rgba(138,164,181,0.35)"),
-        banda("banda_80_inferior", "banda_80_superior", "Banda 80 %", "rgba(36,48,56,0.18)"),
-      ],
-      `Proyección · ${D.nombres[ui.modelo]}`,
-      "Porcentaje efectivo anual",
-    )}
-    <p>El gráfico muestra los últimos ocho años, o un tramo más corto si el rango empieza después.</p>
-    ${tabla(["Fecha", "Meses", "Proyección", "80 % inferior", "80 % superior", "95 % inferior", "95 % superior", "RMSE", "MAE"], filas)}
-    <button type="button" id="descarga">Descargar tu proyección (CSV)</button>
-    <p>El archivo usa punto y coma y coma decimal. Las bandas suman al pronóstico los cuantiles del error ya realizado.</p>`;
-}
+    return salida;
+  }
 
-function seccionDesempeno() {
-  const ui = estado();
-  const cabezas = ["Modelo", ...HORIZONTES.map((h) => (h === 1 ? "1 mes" : `${h} meses`))];
-  const rmse = ORDEN.map((modelo) => [
-    D.nombres[modelo],
-    ...HORIZONTES.map((h) => coma(buscar(D.metricas, modelo, h).rmse, 3)),
-  ]);
-  const razon = ORDEN.map((modelo) => [
-    D.nombres[modelo],
-    ...HORIZONTES.map((h) => coma(buscar(D.metricas, modelo, h).razon_rmse_paseo, 2)),
-  ]);
-  const referencia = [1, 3, 6, 12].map((h) => [
-    String(h),
-    coma(buscar(D.metricas, "ridge_agregados", h).rmse, 3),
-    coma(D.referencia.ridge_agregados[h], 2),
-    coma(buscar(D.metricas, "ridge_tasa_politica", h).rmse, 3),
-    coma(D.referencia.ridge_tasa_politica[h], 2),
-    coma(buscar(D.metricas, "paseo_aleatorio", h).rmse, 3),
-    coma(D.referencia.paseo_aleatorio[h], 2),
-  ]);
-  let distancia = 0;
-  [1, 3, 6, 12].forEach((h) => {
-    ["ridge_agregados", "ridge_tasa_politica", "paseo_aleatorio"].forEach((modelo) => {
-      distancia = Math.max(distancia, Math.abs(buscar(D.metricas, modelo, h).rmse - D.referencia[modelo][h]));
-    });
-  });
-  const detalle = HORIZONTES.map((h) => {
-    const fila = buscar(D.metricas, ui.modelo, h);
-    return [String(h), String(fila.n), coma(fila.rmse, 3), coma(fila.mae, 3), coma(fila.mase, 3), coma(fila.sesgo, 3), coma(fila.dm_stat, 3), textoP(fila.dm_pvalue)];
-  });
-  const cob = HORIZONTES.map((h) => {
-    const fila = buscar(D.cobertura, ui.modelo, h);
-    if (!fila) return null;
-    return [String(h), String(fila.n), coma(fila.cobertura_80 * 100, 1), coma(fila.cobertura_95 * 100, 1)];
-  }).filter(Boolean);
-  return `
-    <h2>Error fuera de muestra</h2>
-    <p>Misma ventana expansiva para todos: 120 meses mínimos, primer objetivo en mayo de 2012 y reajuste cada mes. La razón es el RMSE del modelo dividido por el de la tasa constante. Por debajo de 1, el modelo se equivoca menos.</p>
-    <h3>RMSE, en puntos porcentuales</h3>
-    ${tabla(cabezas, rmse)}
-    <h3>Razón del RMSE frente a la tasa constante</h3>
-    ${tabla(cabezas, razon)}
-    <h3>Referencia publicada, a tres decimales en el cálculo</h3>
-    ${tabla(["Horizonte", "Ridge con agregados", "Referencia con agregados", "Ridge sin agregados", "Referencia sin agregados", "Tasa constante", "Referencia constante"], referencia)}
-    <p>La mayor distancia frente a la referencia de 1 a 12 meses es ${coma(distancia, 3)} puntos. La tolerancia de la prueba es 0,05.</p>
-    <h3>${D.nombres[ui.modelo]}</h3>
-    <p>Diebold-Mariano compara el error cuadrático con la tasa constante. Un estadístico negativo favorece al modelo. En la tasa constante la comparación es contra sí misma y no se reporta.</p>
-    ${tabla(["Horizonte", "Evaluaciones", "RMSE", "MAE", "MASE", "Sesgo", "Diebold-Mariano", "Valor p"], detalle)}
-    <p>Cobertura de las bandas construidas solo con errores ya conocidos en cada origen. El nominal es 80 % y 95 %.</p>
-    ${tabla(["Horizonte", "Evaluaciones", "Cobertura 80 %", "Cobertura 95 %"], cob)}
-    ${barras(ORDEN.map((modelo) => ({ nombre: D.nombres[modelo], valor: buscar(D.metricas, modelo, ui.horizonte).rmse })), `RMSE a ${ui.horizonte} ${ui.horizonte === 1 ? "mes" : "meses"}`)}
-    <button type="button" id="descarga-metricas">Descargar las métricas (CSV)</button>`;
-}
+  function trazo(puntos, sx, sy) {
+    let d = "";
+    let abierto = false;
+    for (const [x, y] of puntos) {
+      if (y === null || y === undefined || !Number.isFinite(y)) { abierto = false; continue; }
+      d += `${abierto ? "L" : "M"}${sx(x).toFixed(1)},${sy(y).toFixed(1)}`;
+      abierto = true;
+    }
+    return d;
+  }
 
-function seccionEstudio() {
-  const c = D.calidad;
-  const e = D.eda;
-  const p = D.pruebas;
-  const h12 = (modelo) => buscar(D.metricas, modelo, 12).rmse;
-  const valor = (modelo, h) => buscar(D.metricas, modelo, h).rmse;
-  const principal = (h) => senda("ridge_agregados").find((fila) => fila.horizonte === h).proyeccion;
-  const aporte = HORIZONTES.map((h) => {
-    const con = valor("ridge_agregados", h);
-    const sin = valor("ridge_tasa_politica", h);
-    const paseo = valor("paseo_aleatorio", h);
-    return [String(h), coma(sin - con, 3), coma(paseo - con, 3)];
-  });
-  const atipicos = c.atipicos.map((item) => `${item.fecha} (${coma(item.cambio)} puntos)`).join("; ");
-  const resto = c.atipicos_resto ? ` Hay ${c.atipicos_resto} casos más.` : "";
-  const vif = p.vif.map((item) => [ETIQUETA[item.nombre] || item.nombre, coma(item.valor, 1)]);
-  const raices = p.raices.map((fila) => [fila.serie, textoP(fila.adf), textoP(fila.kpss), lectura(fila.adf, fila.kpss)]);
-  const granger = p.granger.map((fila) => [fila.causa, String(fila.rezago), textoP(fila.previo), textoP(fila.completo)]);
-  const columnas = ["y", "pol", "spread", "g_m1", "g_m2", "g_m3", "inflacion", "brecha_inflacion"];
-  const etiquetas = ["Tasa", "Política", "Spread", "g(M1)", "g(M2)", "g(M3)", "Inflación", "Brecha"];
-  const matriz = etiquetas.map((_, i) => etiquetas.map((__, j) => {
-    const a = D.panel[columnas[i]];
-    const b = D.panel[columnas[j]];
+  function poligono(puntos, sx, sy) {
+    if (!puntos.length) return "";
+    const arriba = puntos.map(([x, , alto]) => `${sx(x).toFixed(1)},${sy(alto).toFixed(1)}`);
+    const abajo = puntos.map(([x, bajo]) => `${sx(x).toFixed(1)},${sy(bajo).toFixed(1)}`).reverse();
+    return `${arriba.join(" ")} ${abajo.join(" ")}`;
+  }
+
+  function grafico(contenedor, o) {
+    const W = Math.max(280, Math.floor(contenedor.clientWidth));
+    const H = o.alto || 300;
+    const series = o.series || [];
+    const bandas = o.bandas || [];
     const xs = [];
     const ys = [];
-    a.forEach((valor, k) => {
-      if (valor === null || b[k] === null) return;
-      xs.push(valor);
-      ys.push(b[k]);
+    series.forEach((s) => s.p.forEach(([x, y]) => { if (y !== null && y !== undefined) { xs.push(x); ys.push(y); } }));
+    bandas.forEach((b) => b.p.forEach(([x, bajo, alto]) => { xs.push(x); ys.push(bajo, alto); }));
+    (o.marcas || []).forEach((m) => { xs.push(m.t); ys.push(m.v); });
+    (o.lineasH || []).forEach((l) => { if (l.incluir) ys.push(l.v); });
+    if (!xs.length) { contenedor.innerHTML = '<p class="pie-grafico">Sin datos para este periodo.</p>'; return null; }
+    const x0 = o.x0 ?? Math.min(...xs);
+    const x1 = o.x1 ?? Math.max(...xs);
+    let yMin = o.yMin ?? Math.min(...ys);
+    let yMax = o.yMax ?? Math.max(...ys);
+    if (o.desdeCero) yMin = Math.min(0, yMin);
+    const holgura = (yMax - yMin) * 0.06 || 0.5;
+    const escala = ticksY(o.desdeCero && yMin === 0 ? 0 : yMin - holgura, yMax + holgura, o.ticks || 5);
+    const y0 = escala.ticks[0];
+    const y1 = escala.ticks[escala.ticks.length - 1];
+    const decimales = escala.paso < 1 ? (escala.paso < 0.1 ? 2 : 1) : 0;
+    const yFmt = o.yFmt || ((v) => num(v, decimales));
+    const etiquetasY = escala.ticks.map(yFmt);
+    const m = {
+      l: Math.max(30, Math.max(...etiquetasY.map((t) => t.length)) * 6.4 + 12),
+      r: o.margenDer ?? 14,
+      t: o.margenSup ?? 10,
+      b: 26,
+    };
+    const sx = (x) => m.l + ((x - x0) / (x1 - x0 || 1)) * (W - m.l - m.r);
+    const sy = (y) => m.t + ((y1 - y) / (y1 - y0 || 1)) * (H - m.t - m.b);
+
+    let svg = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(o.titulo || "Gráfico")}">`;
+    svg += '<g class="eje-y">';
+    escala.ticks.forEach((v, i) => {
+      const y = sy(v).toFixed(1);
+      svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${y}" y2="${y}" stroke="var(--rejilla)" stroke-width="1"/>`;
+      svg += `<text x="${m.l - 8}" y="${Number(y) + 4}" text-anchor="end">${etiquetasY[i]}</text>`;
     });
-    const n = xs.length;
-    const mx = xs.reduce((s, v) => s + v, 0) / n;
-    const my = ys.reduce((s, v) => s + v, 0) / n;
-    let nume = 0;
-    let dx = 0;
-    let dy = 0;
-    for (let k = 0; k < n; k += 1) {
-      nume += (xs[k] - mx) * (ys[k] - my);
-      dx += (xs[k] - mx) ** 2;
-      dy += (ys[k] - my) ** 2;
+    svg += "</g><g>";
+    const marcasX = o.xTicks ? o.xTicks : ticksTiempo(x0, x1, W - m.l - m.r);
+    marcasX.forEach((tick) => {
+      svg += `<text x="${sx(tick.t).toFixed(1)}" y="${H - 8}" text-anchor="middle">${tick.texto}</text>`;
+    });
+    svg += "</g>";
+    bandas.forEach((b) => {
+      svg += `<polygon points="${poligono(b.p, sx, sy)}" fill="${b.color}" fill-opacity="${b.op ?? 0.12}" stroke="none"/>`;
+    });
+    (o.lineasV || []).forEach((l) => {
+      const x = sx(l.t).toFixed(1);
+      svg += `<line x1="${x}" x2="${x}" y1="${m.t}" y2="${H - m.b}" stroke="var(--borde-fuerte)" stroke-width="1"/>`;
+      if (l.texto) svg += `<text class="rotulo" x="${Number(x) + (l.ancla === "end" ? -6 : 6)}" y="${m.t + 10}" text-anchor="${l.ancla || "start"}">${esc(l.texto)}</text>`;
+    });
+    (o.lineasH || []).forEach((l) => {
+      if (l.v < y0 || l.v > y1) return;
+      const y = sy(l.v).toFixed(1);
+      svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${y}" y2="${y}" stroke="${l.color || "var(--tinta-3)"}" stroke-width="1.2"/>`;
+      if (l.texto) svg += `<text class="rotulo" x="${W - m.r - 4}" y="${Number(y) - 5}" text-anchor="end">${esc(l.texto)}</text>`;
+    });
+    if (o.dinamica) svg += '<g data-capa="dinamica"></g>';
+    series.forEach((s) => {
+      if (s.area) {
+        const base = s.p.filter(([, y]) => y !== null && y !== undefined).map(([x, y]) => [x, y0, y]);
+        svg += `<polygon points="${poligono(base, sx, sy)}" fill="${s.color}" fill-opacity="0.1" stroke="none"/>`;
+      }
+      const guion = s.guion ? ` stroke-dasharray="${s.guion}"` : "";
+      svg += `<path d="${trazo(s.p, sx, sy)}" fill="none" stroke="${s.color}" stroke-width="${s.ancho || 2}" stroke-linejoin="round" stroke-linecap="round"${guion}/>`;
+      if (s.puntoFinal) {
+        const ultimo = [...s.p].reverse().find(([, y]) => y !== null && y !== undefined);
+        if (ultimo) svg += `<circle cx="${sx(ultimo[0]).toFixed(1)}" cy="${sy(ultimo[1]).toFixed(1)}" r="4.5" fill="${s.color}" stroke="var(--superficie)" stroke-width="2"/>`;
+      }
+    });
+    (o.marcas || []).forEach((marca) => {
+      svg += `<circle cx="${sx(marca.t).toFixed(1)}" cy="${sy(marca.v).toFixed(1)}" r="5" fill="${marca.color}" stroke="var(--superficie)" stroke-width="2"/>`;
+    });
+    (o.etiquetas || []).forEach((e) => {
+      svg += `<text class="rotulo-fuerte" x="${(sx(e.t) + (e.dx || 0)).toFixed(1)}" y="${(sy(e.v) + (e.dy ?? -10)).toFixed(1)}" text-anchor="${e.ancla || "middle"}">${esc(e.texto)}</text>`;
+    });
+    svg += `<line data-cruz x1="0" x2="0" y1="${m.t}" y2="${H - m.b}" stroke="var(--tinta-3)" stroke-width="1" visibility="hidden"/>`;
+    svg += '<g data-puntos></g>';
+    svg += `<rect data-zona x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent"/>`;
+    svg += "</svg>";
+    contenedor.innerHTML = svg;
+
+    const conTip = series.filter((s) => !s.sinTip);
+    const indice = conTip.map((s) => new Map(s.p.filter(([, y]) => y !== null && y !== undefined)));
+    const tiempos = [...new Set(conTip.flatMap((s) => s.p.filter(([, y]) => y !== null && y !== undefined).map(([x]) => x)))].sort((a, b) => a - b);
+    const cruz = $("[data-cruz]", contenedor);
+    const capaPuntos = $("[data-puntos]", contenedor);
+    const zona = $("[data-zona]", contenedor);
+    const xFmt = o.xFmt || mesAnio;
+    const vFmt = o.vFmt || ((v) => pct(v));
+    zona.addEventListener("pointermove", (evento) => {
+      if (!tiempos.length) return;
+      const caja = zona.getBoundingClientRect();
+      const xPixel = m.l + ((evento.clientX - caja.left) / caja.width) * (W - m.l - m.r);
+      const buscado = x0 + ((xPixel - m.l) / (W - m.l - m.r)) * (x1 - x0);
+      let bajo = 0;
+      let alto = tiempos.length - 1;
+      while (alto - bajo > 1) {
+        const medio = (bajo + alto) >> 1;
+        if (tiempos[medio] < buscado) bajo = medio; else alto = medio;
+      }
+      const t = Math.abs(tiempos[bajo] - buscado) <= Math.abs(tiempos[alto] - buscado) ? tiempos[bajo] : tiempos[alto];
+      const x = sx(t).toFixed(1);
+      cruz.setAttribute("x1", x);
+      cruz.setAttribute("x2", x);
+      cruz.setAttribute("visibility", "visible");
+      let filas = "";
+      let puntos = "";
+      conTip.forEach((s, i) => {
+        const v = indice[i].get(t);
+        if (v === undefined) return;
+        puntos += `<circle cx="${x}" cy="${sy(v).toFixed(1)}" r="4.5" fill="${s.color}" stroke="var(--superficie)" stroke-width="2"/>`;
+        filas += `<div><span><i style="background:${s.color}"></i>${esc(s.nombre)}</span><em>${(s.vFmt || vFmt)(v)}</em></div>`;
+      });
+      capaPuntos.innerHTML = puntos;
+      const extra = o.tipExtra ? o.tipExtra(t) : "";
+      mostrarTip(`<b>${xFmt(t)}</b>${filas}${extra}`, evento.clientX, evento.clientY);
+    });
+    zona.addEventListener("pointerleave", () => {
+      cruz.setAttribute("visibility", "hidden");
+      capaPuntos.innerHTML = "";
+      ocultarTip();
+    });
+    return { sx, sy, W, H, m, y0, y1, capa: $('[data-capa="dinamica"]', contenedor) };
+  }
+
+  function leyenda(contenedor, items) {
+    contenedor.innerHTML = items
+      .map((item) => `<span><i class="${item.tipo || ""}" style="color:${item.color}"></i>${esc(item.nombre)}</span>`)
+      .join("");
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Modelo en el navegador                                              */
+  /* ------------------------------------------------------------------ */
+
+  const ESCENARIO_BASE = {
+    dPol: 0,
+    m2: P.g_m2[N - 1],
+    inf: P.inflacion[N - 1],
+  };
+
+  function sendaRidge(modelo, escenario) {
+    const ridge = D.ridge[modelo];
+    const x = ridge.x_origen.slice();
+    const delta = escenario.dPol / 100;
+    const dInf = escenario.inf - ESCENARIO_BASE.inf;
+    ridge.columnas.forEach((columna, j) => {
+      if (columna === "spread") x[j] -= delta;
+      if (columna === "dpol3") x[j] += delta;
+      if (columna === "g_m2") x[j] = escenario.m2;
+      if (columna === "tasa_real") x[j] += delta - dInf;
+    });
+    return ridge.ajustes.map((ajuste) => {
+      let cambio = ajuste.b0;
+      ajuste.coef.forEach((b, j) => { cambio += b * ((x[j] - ajuste.media[j]) / ajuste.desv[j]); });
+      return Y0 + cambio;
+    });
+  }
+
+  function sendaCentral(modelo, escenario = ESCENARIO_BASE) {
+    if (modelo === "combinado" && D.ridge.ridge_real) {
+      const a = sendaRidge("ridge_agregados", escenario);
+      const b = sendaRidge("ridge_real", escenario);
+      return a.map((v, i) => (v + b[i]) / 2);
     }
-    return nume / Math.sqrt(dx * dy);
-  }));
-  const calor = tabla(["", ...etiquetas], matriz.map((fila, i) => [etiquetas[i], ...fila.map((valor) => coma(valor, 2))]));
-  const rezagos = ["g_m1", "g_m2", "g_m3"].map((clave) => {
-    const nombre = { g_m1: "Crecimiento de M1", g_m2: "Crecimiento de M2", g_m3: "Crecimiento de M3" }[clave];
-    return [nombre, String(e.rezago[clave].rezago), coma(e.rezago[clave].correlacion, 2)];
-  });
-  const coef = HORIZONTES.map((h) => {
-    const bloque = D.coeficientes.filter((fila) => fila.horizonte === h);
-    const toma = (variable) => bloque.find((fila) => fila.variable === variable).coeficiente;
-    return [String(h), coma(bloque[0].intercepto, 3), ...["dy3", "spread", "dpol3", "g_m1", "g_m2", "g_m3"].map((variable) => coma(toma(variable), 3))];
-  });
-  const regimenes = D.regimenes
-    .slice()
-    .sort((a, b) => a.regimen.localeCompare(b.regimen) || a.horizonte - b.horizonte || a.modelo.localeCompare(b.modelo))
-    .map((fila) => [fila.regimen, fila.diseno, D.nombres[fila.modelo], String(fila.horizonte), String(fila.n), coma(fila.rmse, 2)]);
-  return `
-    <h2>Lectura</h2>
-    <p>La tasa mensual del crédito de consumo cerró septiembre de 2026 en <strong>${coma(c.tasa)} %</strong>. El Ridge con agregados la ubica en <strong>${coma(principal(1))} %</strong> a un mes, <strong>${coma(principal(3))} %</strong> a tres, <strong>${coma(principal(6))} %</strong> a seis y <strong>${coma(principal(12))} %</strong> a doce. A un mes el RMSE es ${coma(valor("ridge_agregados", 1), 3)} con agregados, ${coma(valor("ridge_tasa_politica", 1), 3)} sin ellos y ${coma(valor("paseo_aleatorio", 1), 3)} con la tasa constante. A doce meses: ${coma(valor("ridge_agregados", 12), 3)}, ${coma(valor("ridge_tasa_politica", 12), 3)} y ${coma(valor("paseo_aleatorio", 12), 3)}.</p>
-    <h2>Calidad de los datos</h2>
-    <p>${c.decision}</p>
-    <div class="cifras">
-      <div><span>Meses de la muestra</span><strong>${c.observaciones}</strong></div>
-      <div><span>Cierre de la tasa</span><strong>${coma(c.tasa)} %</strong></div>
-      <div><span>Política de septiembre</span><strong>${coma(c.politica)} %</strong></div>
-      <div><span>Política vigente</span><strong>${coma(c.pol_ultimo)} %</strong></div>
-    </div>
-    <p>La tasa semanal tiene ${c.tasas_filas} viernes, del ${c.tasas_inicio} al ${c.tasas_fin}, sin duplicados y sin huecos distintos de siete días. La política diaria va del ${c.pol_inicio} al ${c.pol_fin}. Falta un día: ${c.pol_falta.join(", ")}, fuera de la muestra. El 12,25 % es el nivel desde el 1 de octubre de 2026, no el promedio de septiembre.</p>
-    <p>Los agregados mensuales cubren ${c.ag_filas} cierres, del ${c.ag_inicio} al ${c.ag_fin}, sin meses faltantes. La serie semanal tiene ${c.sem_filas} observaciones y ${c.sem_huecos} saltos distintos de siete días; no entra al modelo. La meta de inflación está vacía en ${c.meta_nula} meses anteriores a 1991 y está completa en la muestra de tasas. En el panel de estimación no hay nulos.</p>
-    <p>Cambios mensuales de la tasa con puntuación robusta superior a 3,5: ${atipicos}.${resto} Se conservan: son saltos del ciclo, no huecos de captura.</p>
-    <p>Octubre de 2026 tiene ${D.parcial.n} viernes, del ${D.parcial.desde} al ${D.parcial.hasta}, y promedia ${coma(D.parcial.tasa)} % en consumo y ${coma(D.parcial.politica)} % en política. No se usa para entrenar.</p>
-    <p>La inflación anual calculada con el IPC correlaciona ${coma(e.ipc.correlacion, 3)} con la serie oficial. La diferencia absoluta máxima es ${coma(e.ipc.max_abs, 2)} puntos.</p>
-    <h2>Correlaciones</h2>
-    <p>La tasa promedia ${coma(e.descriptivos.y.media)} % (entre ${coma(e.descriptivos.y.minimo)} y ${coma(e.descriptivos.y.maximo)}). La política promedia ${coma(e.descriptivos.pol.media)} % y el spread ${coma(e.descriptivos.spread.media)} puntos. El crecimiento anual medio es ${coma(e.descriptivos.g_m1.media)} % en M1, ${coma(e.descriptivos.g_m2.media)} % en M2 y ${coma(e.descriptivos.g_m3.media)} % en M3.</p>
-    <p>Correlación de los crecimientos: M1–M2 ${coma(e.corr.g_m1_g_m2, 2)}, M1–M3 ${coma(e.corr.g_m1_g_m3, 2)} y M2–M3 ${coma(e.corr.g_m2_g_m3, 2)}. M2 y M3 van casi juntos.</p>
-    ${tabla(["Variable", "VIF"], vif)}
-    <p>Con esos VIF, el coeficiente de M2 o de M3 no se lee como el efecto de ese agregado.</p>
-    <h3>Correlaciones en la muestra mensual</h3>
-    ${calor}
-    ${lineasIndice([
-      { nombre: "Crecimiento de M1", y: p.cruzada.g_m1, color: "#243038" },
-      { nombre: "Crecimiento de M2", y: p.cruzada.g_m2, color: "#2f6f5b" },
-      { nombre: "Crecimiento de M3", y: p.cruzada.g_m3, color: "#8a4b32" },
-    ], "Correlación de la tasa con el crecimiento rezagado", "Rezago del agregado, en meses")}
-    ${tabla(["Variable rezagada", "Rezago de mayor correlación", "Correlación"], rezagos)}
-    <h2>Pruebas de series</h2>
-    <p>ADF usa constante en tasas, crecimientos y diferencias, y constante más tendencia en los niveles de M1, M2 y M3. KPSS recorta su valor p al rango 0,01–0,10. «Compatible con raíz unitaria» significa que ADF no rechaza la nula al 5 % y KPSS sí rechaza la estacionariedad.</p>
-    ${tabla(["Serie", "ADF, valor p", "KPSS, valor p", "Lectura"], raices)}
-    <p>La tasa y los saldos monetarios se comportan como series integradas. Por eso el modelo usa el crecimiento anual y no el nivel. Los crecimientos de M2 y M3 siguen siendo persistentes.</p>
-    <p>Granger se hace sobre la diferencia de la tasa. El valor p de la izquierda usa solo datos hasta abril de 2012, antes de la evaluación. El de la derecha usa toda la muestra y es descriptivo.</p>
-    ${tabla(["Causa", "Rezago", "p hasta abril de 2012", "p en toda la muestra"], granger)}
-    <p>La variación de la política anticipa la de la tasa. La señal de los agregados depende del rezago.</p>
-    <p>Engle-Granger entre la tasa y la política tiene valor p ${textoP(p.eg_politica)}. Entre la tasa y el logaritmo de M2, ${textoP(p.eg_m2)}. Johansen sobre tasa y política: traza ${coma(p.joh_traza, 2)} frente a un crítico del 5 % de ${coma(p.joh_crit, 2)}. Con el logaritmo de M2 la traza es ${coma(p.joh_m_traza, 2)} y el crítico es ${coma(p.joh_m_crit, 2)}. Al 5 % no hay cointegración. El VECM de rango 1 se dejó como contraste, no como modelo mantenido.</p>
-    <p>Las dummies de mes sobre el cambio de la tasa, estimadas solo hasta abril de 2012, tienen valor p conjunto ${textoP(p.estacional)}. El SARIMAX no lleva término estacional.</p>
-    <h3>Coeficientes del Ridge final, sobre variables estandarizadas</h3>
-    ${tabla(["Horizonte", "Intercepto", "dy3", "Spread", "dpol3", "g(M1)", "g(M2)", "g(M3)"], coef)}
-    <p>Los signos de los tres crecimientos no son estables. No son una elasticidad.</p>
-    <h2>Residuos y regímenes</h2>
-    <p>En el error a un mes del Ridge con agregados, Ljung-Box tiene valor p ${textoP(D.residuos.ljung6)} a 6 rezagos y ${textoP(D.residuos.ljung12)} a 12. Jarque-Bera tiene valor p ${textoP(D.residuos.jarque)} (asimetría ${coma(D.residuos.asimetria, 2)}, curtosis ${coma(D.residuos.curtosis, 2)}). El RMSE de la primera mitad de la evaluación es ${coma(D.residuos.rmse1, 2)} y el de la segunda, ${coma(D.residuos.rmse2, 2)}. Hay autocorrelación y colas pesadas. La banda empírica no promete la cobertura nominal.</p>
-    ${grafico([{ nombre: "Error a un mes", x: D.residuos.fecha, y: D.residuos.error, color: "#243038", ancho: 1.4 }], [], "Error a un mes: realizada menos pronóstico", "Puntos porcentuales")}
-    <p>El backtest principal empieza en mayo de 2012, así que 2008-2009 no tiene error fuera de muestra en ese diseño. La fila de 2008-2009 es un diagnóstico con el primer origen en enero de 2007 y no entra en la tabla de referencia.</p>
-    ${tabla(["Régimen", "Diseño", "Modelo", "Horizonte", "Meses", "RMSE"], regimenes)}
-    <p>2022-2023 concentra el error: es la subida rápida de la política y de la tasa.</p>
-    <h2>Cuánto aportan M1, M2 y M3</h2>
-    ${tabla(["Horizonte", "Reducción frente al Ridge sin agregados", "Reducción frente a la tasa constante"], aporte)}
-    <p>A un mes la reducción es ${coma(valor("ridge_tasa_politica", 1) - valor("ridge_agregados", 1), 3)} puntos. A tres meses es ${coma(valor("ridge_tasa_politica", 3) - valor("ridge_agregados", 3), 3)}. A seis meses es ${coma(valor("ridge_tasa_politica", 6) - valor("ridge_agregados", 6), 3)} y a doce, ${coma(valor("ridge_tasa_politica", 12) - valor("ridge_agregados", 12), 3)}. A veinticuatro meses llega a ${coma(valor("ridge_tasa_politica", 24) - valor("ridge_agregados", 24), 3)} puntos: ahí el Ridge sin agregados ya no mejora a la tasa constante, y el que lleva M1, M2 y M3 sí. Los agregados aportan sobre todo desde los seis meses y casi nada al mes siguiente.</p>
-    <p>Añadir la inflación deja el RMSE de doce meses en ${coma(h12("ridge_inflacion"), 2)}. Añadir la brecha lo deja en ${coma(h12("ridge_brecha"), 2)}. El Ridge sin esas variables está en ${coma(h12("ridge_agregados"), 2)}. Ninguna de las dos lo reduce en los horizontes de 1, 3, 6 y 12 meses. Un componente principal de los tres crecimientos da ${coma(h12("pca_ridge"), 2)} a doce meses, frente a ${coma(h12("ridge_agregados"), 2)} de las tres series. La ganancia es la de un factor común, no la de tres señales separadas.</p>
-    <p>Nada de esto identifica cuánto sube la tasa si crece M2. Los tres agregados se mueven juntos y el ejercicio es predictivo. El backtest es la pieza para decidir: el bloque monetario mejora el mediano plazo y no el mes siguiente.</p>
-    <h2>Limitaciones</h2>
-    <p>El modelo no es una regla de política. No proyecta la senda futura de la política ni del dinero. La media y la desviación de cada origen salen de los pares cuyo objetivo ya se observó.</p>
-    <p>Las bandas heredan 2020-2023 y son anchas. 2008-2009 no valida el diseño principal. Octubre de 2026 está incompleto. La frecuencia semanal de los agregados no se modeló.</p>`;
-}
+    if (D.ridge[modelo]) return sendaRidge(modelo, escenario);
+    return D.proyeccion[modelo].central.slice();
+  }
 
-function csv(filas) {
-  return filas.map((fila) => fila.map((celda) => String(celda).replace(".", ",")).join(";")).join("\n");
-}
+  const admiteEscenario = (modelo) => RIDGE_ESCENARIO.includes(modelo) && (modelo !== "combinado" || !!D.ridge.ridge_real);
+  const usaColumna = (modelo, columna) => {
+    if (modelo === "combinado") return ["ridge_agregados", "ridge_real"].some((m) => D.ridge[m] && D.ridge[m].columnas.includes(columna));
+    return !!D.ridge[modelo] && D.ridge[modelo].columnas.includes(columna);
+  };
+  const rmse = (modelo, h) => (D.metricas[modelo] ? D.metricas[modelo].rmse[h - 1] : null);
 
-function descargar(nombre, texto) {
-  const enlace = document.createElement("a");
-  enlace.href = URL.createObjectURL(new Blob([texto], { type: "text/csv;charset=utf-8" }));
-  enlace.download = nombre;
-  enlace.click();
-}
+  /* ------------------------------------------------------------------ */
+  /* Datos en vivo                                                       */
+  /* ------------------------------------------------------------------ */
 
-function pintar() {
-  const ui = estado();
-  document.getElementById("horizonte-valor").textContent = String(ui.horizonte);
-  const punto = senda("ridge_agregados").find((fila) => fila.horizonte === 12);
-  document.getElementById("resumen").textContent = `A 12 meses tu proyección es ${coma(punto.proyeccion)} %.`;
-  const contenido = document.getElementById("contenido");
-  if (ui.seccion === "historial") contenido.innerHTML = seccionHistorial();
-  else if (ui.seccion === "proyeccion") contenido.innerHTML = seccionProyeccion();
-  else if (ui.seccion === "desempeno") contenido.innerHTML = seccionDesempeno();
-  else contenido.innerHTML = seccionEstudio();
-  const boton = document.getElementById("descarga");
-  if (boton) {
-    boton.addEventListener("click", () => {
-      const cabezas = ["fecha", "horizonte_meses", "proyeccion_tasa", "banda_80_inferior", "banda_80_superior", "banda_95_inferior", "banda_95_superior", "rmse_historico", "mae_historico"];
-      const filas = [cabezas, ...window.__tablaProyeccion.map((fila) => [
-        fila.fecha, fila.horizonte, fila.proyeccion, fila.banda_80_inferior, fila.banda_80_superior,
-        fila.banda_95_inferior, fila.banda_95_superior, fila.rmse_historico, fila.mae_historico,
-      ])];
-      descargar(`proyeccion_${ui.modelo}.csv`, `\uFEFF${csv(filas)}`);
+  const SOCRATA = "https://www.datos.gov.co/resource/";
+  const REFRESCO_MS = 5 * 60 * 1000;
+  const VIVO = {
+    trm: { estado: "cargando", serie: D.externos.trm ? D.externos.trm.fecha.map((f, i) => [ms(f), D.externos.trm.valor[i]]) : [] },
+    fed: { estado: "cargando", serie: D.externos.fed ? D.externos.fed.fecha.map((f, i) => [ms(f), D.externos.fed.valor[i]]) : [] },
+    usura: { estado: "cargando", ...(D.mercado.usura || {}) },
+    bancos: { estado: "cargando", corte: D.mercado.corte, entidades: D.mercado.entidades || [] },
+    ultima: null,
+    proxima: null,
+  };
+
+  async function pedir(url, parametros = {}, espera = 20000) {
+    const destino = new URL(url);
+    Object.entries(parametros).forEach(([clave, valor]) => destino.searchParams.set(clave, valor));
+    const control = new AbortController();
+    const reloj = setTimeout(() => control.abort(), espera);
+    try {
+      const respuesta = await fetch(destino, { signal: control.signal, cache: "no-store" });
+      if (!respuesta.ok) throw new Error(`HTTP ${respuesta.status}`);
+      return await respuesta.json();
+    } finally {
+      clearTimeout(reloj);
+    }
+  }
+
+  async function vivoTRM() {
+    const filas = await pedir(`${SOCRATA}mcec-87by.json`, { $select: "vigenciadesde,valor", $order: "vigenciadesde DESC", $limit: 300 });
+    const serie = filas.map((f) => [ms(f.vigenciadesde), Number(f.valor)]).filter(([, v]) => Number.isFinite(v)).reverse();
+    if (!serie.length) throw new Error("vacío");
+    VIVO.trm = { estado: "vivo", serie };
+  }
+
+  async function vivoUsura() {
+    const filas = await pedir(`${SOCRATA}pare-7x5i.json`, { $where: "modalidad='CONSUMO Y ORDINARIO'", $order: "vigencia_desde DESC", $limit: 3 });
+    if (!filas.length) throw new Error("vacío");
+    const hoy = Date.now();
+    const vigente = filas.find((f) => ms(f.vigencia_desde) <= hoy && hoy <= ms(f.vigencia_hasta) + 86400000) || filas[0];
+    const ibc = Number(String(vigente.interes_bancario_corriente).replace("%", "").replace(",", "."));
+    if (!Number.isFinite(ibc)) throw new Error("formato");
+    VIVO.usura = {
+      estado: "vivo",
+      desde: vigente.vigencia_desde.slice(0, 10),
+      hasta: vigente.vigencia_hasta.slice(0, 10),
+      ibc,
+      usura: Math.round(ibc * 150) / 100,
+      resolucion: vigente.resolucion,
+    };
+  }
+
+  async function vivoFed() {
+    const datos = await pedir("https://markets.newyorkfed.org/api/rates/unsecured/effr/last/260.json");
+    const serie = datos.refRates.map((f) => [ms(f.effectiveDate), Number(f.percentRate)]).filter(([, v]) => Number.isFinite(v)).reverse();
+    if (!serie.length) throw new Error("vacío");
+    VIVO.fed = { estado: "vivo", serie };
+  }
+
+  async function vivoBancos() {
+    const maximo = await pedir(`${SOCRATA}qzsc-9esp.json`, { $select: "max(fecha_corte) as f" }, 25000);
+    const corte = maximo[0].f.slice(0, 10);
+    if (corte === VIVO.bancos.corte && VIVO.bancos.entidades.length) {
+      VIVO.bancos.estado = "vivo";
+      return;
+    }
+    const clave = `tasaviva-bancos-${corte}`;
+    let entidades = null;
+    try { entidades = JSON.parse(localStorage.getItem(clave)); } catch (error) { entidades = null; }
+    if (!entidades) {
+      const filas = await pedir(`${SOCRATA}qzsc-9esp.json`, {
+        $select: "nombre_entidad,nombre_tipo_entidad,sum(tasa_efectiva_promedio*montos_desembolsados) as tm,sum(montos_desembolsados) as monto,sum(numero_de_creditos) as creditos",
+        $where: `fecha_corte='${corte}T00:00:00' AND tipo_de_cr_dito='Consumo' AND producto_de_cr_dito='Libre inversión'`,
+        $group: "nombre_entidad,nombre_tipo_entidad",
+        $order: "monto DESC",
+        $limit: 500,
+      }, 90000);
+      entidades = filas
+        .map((f) => ({ entidad: f.nombre_entidad.trim(), tipo: f.nombre_tipo_entidad, tasa: Number(f.tm) / Number(f.monto), monto: Number(f.monto), creditos: Number(f.creditos) }))
+        .filter((e) => e.monto > 0 && Number.isFinite(e.tasa));
+      if (!entidades.length) throw new Error("vacío");
+      try { localStorage.setItem(clave, JSON.stringify(entidades)); } catch (error) { /* sin almacenamiento */ }
+    }
+    VIVO.bancos = { estado: "vivo", corte, entidades };
+  }
+
+  async function intento(clave, tarea, alTerminar) {
+    try {
+      await tarea();
+    } catch (error) {
+      VIVO[clave].estado = "guardado";
+    }
+    alTerminar();
+    pintarChip();
+  }
+
+  function refrescarVivo() {
+    VIVO.ultima = Date.now();
+    VIVO.proxima = VIVO.ultima + REFRESCO_MS;
+    intento("trm", vivoTRM, () => { pintarFichas(); pintarTRM(); });
+    intento("usura", vivoUsura, () => { pintarFichas(); pintarBancos(); pintarCredito(); pintarHistoria(); });
+    intento("fed", vivoFed, pintarFichas);
+    intento("bancos", vivoBancos, () => { pintarFichas(); pintarBancos(); });
+  }
+
+  function pintarChip() {
+    const estados = ["trm", "usura", "fed", "bancos"].map((clave) => VIVO[clave].estado);
+    const vivos = estados.filter((e) => e === "vivo").length;
+    const cargando = estados.some((e) => e === "cargando");
+    const chip = $("#chip-vivo");
+    const texto = $("#chip-vivo-texto");
+    if (vivos > 0) {
+      chip.dataset.estado = "vivo";
+      texto.textContent = vivos === 4 ? "En vivo" : `En vivo · ${vivos} de 4 fuentes`;
+    } else if (cargando) {
+      chip.dataset.estado = "cargando";
+      texto.textContent = "Conectando…";
+    } else {
+      chip.dataset.estado = "guardado";
+      texto.textContent = "Sin conexión · datos guardados";
+    }
+  }
+
+  function pintarReloj() {
+    const reloj = $("#reloj");
+    if (!VIVO.ultima) { reloj.textContent = ""; return; }
+    const hora = new Date(VIVO.ultima).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const faltan = Math.max(0, Math.round((VIVO.proxima - Date.now()) / 1000));
+    reloj.textContent = `Última consulta ${hora} · próxima en ${Math.floor(faltan / 60)}:${String(faltan % 60).padStart(2, "0")}`;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Resumen                                                             */
+  /* ------------------------------------------------------------------ */
+
+  const promedioSistema = (entidades) => {
+    const monto = entidades.reduce((suma, e) => suma + e.monto, 0);
+    return { tasa: entidades.reduce((suma, e) => suma + e.tasa * e.monto, 0) / monto, monto, creditos: entidades.reduce((s, e) => s + e.creditos, 0) };
+  };
+
+  function pintarTitular() {
+    const senda = D.proyeccion[PRINCIPAL];
+    const doce = senda.central[11];
+    const cambio = doce - Y0;
+    const verbo = cambio > 0.05 ? "subiría a" : cambio < -0.05 ? "bajaría a" : "seguiría cerca de";
+    $("#titular").innerHTML = `La tasa está en <em>${pct(Y0)}</em> y ${verbo} <em>${pct(doce)}</em> en un año`;
+    $("#bajada").textContent =
+      `Es la tasa promedio que cobran las entidades por un crédito de consumo, efectiva anual, a ${mesAnio(ORIGEN)}. ` +
+      `Para ${mesAnio(FECHAS[11])} el rango más probable va de ${pct(senda.b80i[11], 1)} a ${pct(senda.b80s[11], 1)}, según lo que el modelo se ha equivocado en el pasado.`;
+    $("#pasos").innerHTML = [1, 3, 6, 12].map((h) => {
+      const v = senda.central[h - 1];
+      const d = v - Y0;
+      return `<div class="paso"><span>En ${h} ${h === 1 ? "mes" : "meses"}</span><strong>${pct(v)}</strong><small class="${clase(d)}">${flecha(d)} ${pp(d)}</small></div>`;
+    }).join("");
+    if (D.parcial && D.parcial.tasa) {
+      const previsto = senda.central[0];
+      const dentro = D.parcial.tasa >= senda.b80i[0] && D.parcial.tasa <= senda.b80s[0];
+      $("#seguimiento").innerHTML =
+        `<b>Seguimiento:</b> para ${mesAnio(FECHAS[0])} el modelo proyectó ${pct(previsto)}. ` +
+        `Con ${D.parcial.n} semanas publicadas el promedio va en ${pct(D.parcial.tasa)} ` +
+        `(${pp(D.parcial.tasa - previsto)}), ${dentro ? "dentro" : "fuera"} del rango previsto.`;
+    }
+    $("#pie-datos").textContent =
+      `Modelo estimado con ${D.meta.meses} meses, de ${mesAnio(D.meta.inicio)} a ${mesAnio(ORIGEN)}. ` +
+      `Datos generados el ${diaCorto(D.meta.generado.slice(0, 10))}.`;
+  }
+
+  function pintarHeroe() {
+    const desde = N - 61;
+    const historia = P.fecha.slice(desde).map((f, i) => [ms(f), P.y[desde + i]]);
+    const senda = D.proyeccion[PRINCIPAL];
+    const t0 = ms(ORIGEN);
+    const central = [[t0, Y0], ...FECHAS.map((f, i) => [ms(f), senda.central[i]])];
+    const banda = [[t0, Y0, Y0], ...FECHAS.map((f, i) => [ms(f), senda.b80i[i], senda.b80s[i]])];
+    grafico($("#g-heroe"), {
+      titulo: "Tasa de consumo observada y proyectada",
+      alto: 290,
+      margenDer: 54,
+      series: [
+        { nombre: "Observada", color: "var(--s1)", p: historia, ancho: 2.2 },
+        { nombre: "Proyección", color: "var(--s1)", p: central, guion: "5 4", puntoFinal: true },
+      ],
+      bandas: [{ p: banda, color: "var(--s1)", op: 0.14 }],
+      lineasV: [{ t: t0, texto: "Hoy", ancla: "end" }],
+      etiquetas: [
+        { t: ms(FECHAS[HMAX - 1]), v: senda.central[HMAX - 1], texto: pct(senda.central[HMAX - 1], 1), dx: 8, dy: 4, ancla: "start" },
+      ],
+      tipExtra: (t) => {
+        const i = FECHAS.findIndex((f) => ms(f) === t);
+        return i >= 0 ? `<div><span>Rango del 80 %</span><em>${num(senda.b80i[i], 1)} – ${num(senda.b80s[i], 1)} %</em></div>` : "";
+      },
     });
   }
-  const metricas = document.getElementById("descarga-metricas");
-  if (metricas) {
-    metricas.addEventListener("click", () => {
-      const claves = ["modelo", "horizonte", "n", "rmse", "mae", "mase", "sesgo", "razon_rmse_paseo", "dm_stat", "dm_pvalue"];
-      descargar("metricas_backtest.csv", `\uFEFF${csv([claves, ...D.metricas.map((fila) => claves.map((clave) => fila[clave] ?? ""))])}`);
+
+  function ficha({ nombre, valor, detalle, estado, etiqueta }) {
+    const sello = estado === "vivo"
+      ? '<span class="sello vivo-si"><i></i>En vivo</span>'
+      : estado === "cargando"
+        ? '<span class="sello cargando"><i></i>Consultando</span>'
+        : `<span class="sello"><i></i>${etiqueta || "Guardado"}</span>`;
+    return `<article class="ficha"><span class="ficha-nombre">${nombre}</span><strong>${valor}</strong><small>${detalle}</small>${sello}</article>`;
+  }
+
+  let fichasPrevias = "";
+  function pintarFichas() {
+    const trm = VIVO.trm.serie;
+    const ultimoTRM = trm[trm.length - 1];
+    const previoTRM = trm[trm.length - 2];
+    const dTRM = ultimoTRM && previoTRM ? ultimoTRM[1] - previoTRM[1] : 0;
+    const fed = VIVO.fed.serie;
+    const ultimoFed = fed[fed.length - 1];
+    const sistema = VIVO.bancos.entidades.length ? promedioSistema(VIVO.bancos.entidades) : null;
+    const html = [
+      ficha({
+        nombre: "Tasa de política",
+        valor: pct(D.politica.valor),
+        detalle: `Banco de la República · vigente desde el ${diaCorto(D.politica.desde)}${D.politica.anterior !== null ? ` (antes ${pct(D.politica.anterior)})` : ""}`,
+        estado: "guardado",
+        etiqueta: diaCorto(D.politica.fecha),
+      }),
+      ficha({
+        nombre: "Tope legal (usura)",
+        valor: VIVO.usura.usura ? pct(VIVO.usura.usura) : "—",
+        detalle: VIVO.usura.usura ? `Máximo para consumo hasta el ${diaCorto(VIVO.usura.hasta)} · 1,5 × interés corriente de ${pct(VIVO.usura.ibc)}` : "Sin dato",
+        estado: VIVO.usura.estado,
+      }),
+      ficha({
+        nombre: "Libre inversión, semana",
+        valor: sistema ? pct(sistema.tasa) : "—",
+        detalle: sistema ? `Semana al ${diaCorto(VIVO.bancos.corte)} · ${VIVO.bancos.entidades.length} entidades · ${num(sistema.creditos, 0)} créditos` : "Sin dato",
+        estado: VIVO.bancos.estado,
+      }),
+      ficha({
+        nombre: "Dólar (TRM)",
+        valor: ultimoTRM ? `$ ${num(ultimoTRM[1], 2)}` : "—",
+        detalle: ultimoTRM ? `${diaCorto(ultimoTRM[0])} · <span class="delta">${flecha(dTRM)} ${signo(dTRM)}${num(Math.abs(dTRM), 2)}</span> frente al día anterior` : "Sin dato",
+        estado: VIVO.trm.estado,
+      }),
+      ficha({
+        nombre: "Tasa de la Fed (EE. UU.)",
+        valor: ultimoFed ? pct(ultimoFed[1]) : "—",
+        detalle: ultimoFed ? `Fondos federales efectiva · ${diaCorto(ultimoFed[0])}` : "Sin dato",
+        estado: VIVO.fed.estado,
+      }),
+      ficha({
+        nombre: "Inflación anual",
+        valor: pct(P.inflacion[N - 1]),
+        detalle: `${mesAnio(ORIGEN)} · meta del Banco: ${pct(P.meta[N - 1], 0)}`,
+        estado: "guardado",
+        etiqueta: mesCorto(ORIGEN),
+      }),
+    ].join("");
+    if (html === fichasPrevias) return;
+    const destino = $("#fichas");
+    const anteriores = $$(".ficha strong", destino).map((nodo) => nodo.textContent);
+    destino.innerHTML = html;
+    $$(".ficha", destino).forEach((nodo, i) => {
+      if (anteriores.length && anteriores[i] !== $("strong", nodo).textContent) nodo.classList.add("destello");
+    });
+    fichasPrevias = html;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Simulador                                                           */
+  /* ------------------------------------------------------------------ */
+
+  const SIM = {
+    modelo: PRINCIPAL,
+    h: 12,
+    escenario: { ...ESCENARIO_BASE },
+    orden: [],
+    jugados: 0,
+    corriendo: !MOVIMIENTO_REDUCIDO,
+    visible: false,
+    acumulado: 0,
+    previo: 0,
+    central: [],
+    base: [],
+    lienzo: null,
+    umbral: Math.ceil(Y0) + 2,
+  };
+  const VELOCIDADES = [3, 8, 20, 45, 120];
+
+  const episodios = () => D.errores[SIM.modelo] || { origen: [], e: [] };
+  const escenarioActivo = () => admiteEscenario(SIM.modelo) && (
+    SIM.escenario.dPol !== 0 ||
+    (usaColumna(SIM.modelo, "g_m2") && Math.abs(SIM.escenario.m2 - ESCENARIO_BASE.m2) > 1e-9) ||
+    (usaColumna(SIM.modelo, "tasa_real") && Math.abs(SIM.escenario.inf - ESCENARIO_BASE.inf) > 1e-9)
+  );
+
+  function barajar(n) {
+    const orden = Array.from({ length: n }, (_, i) => i);
+    for (let i = n - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [orden[i], orden[j]] = [orden[j], orden[i]];
+    }
+    return orden;
+  }
+
+  function reiniciarSim(completo = false) {
+    SIM.orden = barajar(episodios().e.length);
+    SIM.jugados = completo || MOVIMIENTO_REDUCIDO ? SIM.orden.length : 0;
+    SIM.acumulado = 0;
+    pintarSimEstatico();
+  }
+
+  function llenarControles() {
+    const select = $("#s-modelo");
+    const disponibles = Object.keys(D.nombres).filter((m) => D.proyeccion[m] && D.errores[m]);
+    const grupo = (titulo, ids) => `<optgroup label="${titulo}">${ids.map((m) => `<option value="${m}">${esc(D.nombres[m])}${m === PRINCIPAL ? " (principal)" : ""}</option>`).join("")}</optgroup>`;
+    const primeros = RECOMENDADOS.filter((m) => disponibles.includes(m));
+    select.innerHTML = grupo("Recomendados", primeros) + grupo("Otros modelos del estudio", disponibles.filter((m) => !primeros.includes(m)));
+    select.value = SIM.modelo;
+    const m2 = $("#s-m2");
+    const valoresM2 = P.g_m2.filter((v) => v !== null);
+    // El mínimo se alinea con el valor real para que la rejilla del control
+    // pase exactamente por él y "sin cambios" sea de verdad sin cambios.
+    const alinear = (control, base, minimo, maximo, paso) => {
+      control.step = paso;
+      control.min = (base - Math.ceil((base - minimo) / paso) * paso).toFixed(4);
+      control.max = (base + Math.ceil((maximo - base) / paso) * paso).toFixed(4);
+      control.value = base;
+    };
+    alinear(m2, ESCENARIO_BASE.m2, Math.min(...valoresM2), Math.max(...valoresM2), 0.5);
+    alinear($("#s-inf"), ESCENARIO_BASE.inf, 0, 15, 0.25);
+    const umbral = $("#s-umbral");
+    umbral.value = SIM.umbral;
+    umbral.parentElement.insertAdjacentHTML("beforeend", ' <b id="s-umbral-val"></b>');
+  }
+
+  const cercano = (valor, base) => (Math.abs(valor - base) < 1e-3 ? base : valor);
+
+  function leerControles() {
+    SIM.h = Number($("#s-h").value);
+    SIM.escenario = {
+      dPol: Number($("#s-pol").value),
+      m2: cercano(Number($("#s-m2").value), ESCENARIO_BASE.m2),
+      inf: cercano(Number($("#s-inf").value), ESCENARIO_BASE.inf),
+    };
+    const u = Number($("#s-umbral").value);
+    if (Number.isFinite(u)) SIM.umbral = u;
+  }
+
+  function pintarEtiquetasControles() {
+    const admite = admiteEscenario(SIM.modelo);
+    $("#escenario").disabled = !admite;
+    $("#s-m2").disabled = !admite || !usaColumna(SIM.modelo, "g_m2");
+    $("#s-inf").disabled = !admite || !usaColumna(SIM.modelo, "tasa_real");
+    $("#s-h-val").textContent = `${SIM.h} ${SIM.h === 1 ? "mes" : "meses"} · ${mesCorto(FECHAS[SIM.h - 1])}`;
+    const pol = P.pol[N - 1] + SIM.escenario.dPol / 100;
+    $("#s-pol-val").textContent = SIM.escenario.dPol === 0 ? `${pct(pol)} (real)` : `${pct(pol)} (${signo(SIM.escenario.dPol)}${Math.abs(SIM.escenario.dPol)} pb)`;
+    $("#s-m2-val").textContent = `${pct(SIM.escenario.m2, 2)}${Math.abs(SIM.escenario.m2 - ESCENARIO_BASE.m2) < 1e-9 ? " (real)" : ""}`;
+    $("#s-inf-val").textContent = `${pct(SIM.escenario.inf, 2)}${Math.abs(SIM.escenario.inf - ESCENARIO_BASE.inf) < 1e-9 ? " (real)" : ""}`;
+    $("#s-esc-ayuda").textContent = admite
+      ? `Cambia el punto de partida de ${mesAnio(ORIGEN)} y recalcula el modelo. No supone una senda futura de la política ni del dinero.`
+      : "Este modelo no se recalcula en la página: usa la proyección ya estimada. Elige un modelo Ridge para probar escenarios.";
+    const e12 = rmse(SIM.modelo, 12);
+    const paseo12 = rmse("paseo_aleatorio", 12);
+    const mejora = e12 !== null && paseo12 ? (1 - e12 / paseo12) * 100 : null;
+    $("#s-modelo-ayuda").textContent = e12 === null ? "" :
+      `Error típico a 12 meses: ${num(e12)} pp` +
+      (SIM.modelo === "paseo_aleatorio" ? ". Es la referencia: suponer que la tasa no cambia." :
+        mejora >= 0 ? `, ${num(mejora, 0)} % menos que suponer que la tasa no cambia.` : `, ${num(-mejora, 0)} % más que suponer que la tasa no cambia.`);
+    $("#s-play").textContent = SIM.jugados >= SIM.orden.length ? "Repetir" : SIM.corriendo ? "Pausar" : "Continuar";
+  }
+
+  function pintarSimEstatico() {
+    const contenedor = $("#g-sim");
+    SIM.central = sendaCentral(SIM.modelo, admiteEscenario(SIM.modelo) ? SIM.escenario : ESCENARIO_BASE);
+    SIM.base = sendaCentral(SIM.modelo, ESCENARIO_BASE);
+    const conEscenario = escenarioActivo();
+    const desde = N - 37;
+    const t0 = ms(ORIGEN);
+    const historia = P.fecha.slice(desde).map((f, i) => [ms(f), P.y[desde + i]]);
+    const central = [[t0, Y0], ...FECHAS.map((f, i) => [ms(f), SIM.central[i]])];
+    const todos = episodios().e;
+    let minimo = Math.min(...historia.map((p) => p[1]));
+    let maximo = Math.max(...historia.map((p) => p[1]));
+    todos.forEach((fila) => fila.forEach((error, i) => {
+      const v = SIM.central[i] + error;
+      if (v < minimo) minimo = v;
+      if (v > maximo) maximo = v;
+    }));
+    const series = [
+      { nombre: "Observada", color: "var(--s1)", p: historia, ancho: 2.2 },
+      { nombre: conEscenario ? "Proyección con tu escenario" : "Proyección", color: "var(--s1)", p: central, ancho: 2.6, puntoFinal: true },
+    ];
+    if (conEscenario) {
+      series.push({ nombre: "Proyección sin cambios", color: "var(--neutro)", p: [[t0, Y0], ...FECHAS.map((f, i) => [ms(f), SIM.base[i]])], guion: "4 4", ancho: 1.6 });
+    }
+    const marcas = [];
+    if (D.parcial && D.parcial.tasa) marcas.push({ t: ms(FECHAS[0]), v: D.parcial.tasa, color: "var(--s3)" });
+    SIM.lienzo = grafico(contenedor, {
+      titulo: "Simulación de la tasa de consumo",
+      alto: 400,
+      margenDer: 16,
+      yMin: minimo,
+      yMax: maximo,
+      series,
+      marcas,
+      dinamica: true,
+      lineasV: [
+        { t: t0, texto: "Hoy", ancla: "end" },
+        { t: ms(FECHAS[SIM.h - 1]), texto: mesCorto(FECHAS[SIM.h - 1]), ancla: SIM.h > 18 ? "end" : "start" },
+      ],
+      tipExtra: (t) => {
+        const i = FECHAS.findIndex((f) => ms(f) === t);
+        if (i < 0) return "";
+        const b = bandaEn(i);
+        return b ? `<div><span>Rango del 80 %</span><em>${num(b.q10, 1)} – ${num(b.q90, 1)} %</em></div>` : "";
+      },
+    });
+    const items = [
+      { nombre: "Observada", color: "var(--s1)" },
+      { nombre: conEscenario ? "Proyección con tu escenario" : "Proyección", color: "var(--s1)" },
+    ];
+    if (conEscenario) items.push({ nombre: "Proyección sin cambios", color: "var(--neutro)", tipo: "guion" });
+    items.push(
+      { nombre: "Futuros posibles", color: "var(--neutro)", tipo: "fino" },
+      { nombre: "Rango del 80 % y del 95 %", color: "var(--s1)", tipo: "banda" },
+    );
+    if (marcas.length) items.push({ nombre: `${mesCorto(FECHAS[0])} con datos parciales`, color: "var(--s3)", tipo: "punto" });
+    leyenda($("#sim-leyenda"), items);
+    $("#sim-sub").textContent = `${D.nombres[SIM.modelo]} · efectiva anual, promedio del mes`;
+    pintarEtiquetasControles();
+    pintarSimDinamico();
+  }
+
+  function valoresEn(i) {
+    const todos = episodios().e;
+    const valores = [];
+    for (let k = 0; k < SIM.jugados; k += 1) valores.push(SIM.central[i] + todos[SIM.orden[k]][i]);
+    return valores;
+  }
+
+  function bandaEn(i) {
+    if (SIM.jugados < 8) return null;
+    const ordenados = valoresEn(i).sort((a, b) => a - b);
+    return { q025: cuantil(ordenados, 0.025), q10: cuantil(ordenados, 0.1), q90: cuantil(ordenados, 0.9), q975: cuantil(ordenados, 0.975) };
+  }
+
+  function pintarSimDinamico() {
+    const lienzo = SIM.lienzo;
+    if (!lienzo || !lienzo.capa) return;
+    const { sx, sy } = lienzo;
+    const todos = episodios();
+    const t0 = ms(ORIGEN);
+    const tiempos = FECHAS.map(ms);
+    let svg = "";
+    if (SIM.jugados >= 8) {
+      const b95 = [[t0, Y0, Y0]];
+      const b80 = [[t0, Y0, Y0]];
+      for (let i = 0; i < HMAX; i += 1) {
+        const b = bandaEn(i);
+        b95.push([tiempos[i], b.q025, b.q975]);
+        b80.push([tiempos[i], b.q10, b.q90]);
+      }
+      svg += `<polygon points="${poligono(b95, sx, sy)}" fill="var(--s1)" fill-opacity="0.09"/>`;
+      svg += `<polygon points="${poligono(b80, sx, sy)}" fill="var(--s1)" fill-opacity="0.13"/>`;
+    }
+    const x0 = sx(t0).toFixed(1);
+    const yInicio = sy(Y0).toFixed(1);
+    for (let k = 0; k < SIM.jugados; k += 1) {
+      const fila = todos.e[SIM.orden[k]];
+      let d = `M${x0},${yInicio}`;
+      for (let i = 0; i < HMAX; i += 1) d += `L${sx(tiempos[i]).toFixed(1)},${sy(SIM.central[i] + fila[i]).toFixed(1)}`;
+      const ultimo = k === SIM.jugados - 1 && SIM.jugados < SIM.orden.length;
+      svg += ultimo
+        ? `<path d="${d}" fill="none" stroke="var(--s2)" stroke-width="1.8" stroke-linejoin="round"/>`
+        : `<path d="${d}" fill="none" stroke="var(--neutro)" stroke-width="0.8" stroke-opacity="0.38" stroke-linejoin="round"/>`;
+    }
+    lienzo.capa.innerHTML = svg;
+
+    const total = SIM.orden.length;
+    $("#sim-cuenta").textContent = `${SIM.jugados} de ${total} episodios`;
+    $("#sim-barra").style.width = `${total ? (SIM.jugados / total) * 100 : 0}%`;
+    if (SIM.jugados > 0 && SIM.jugados < total) {
+      const origen = todos.origen[SIM.orden[SIM.jugados - 1]];
+      $("#sim-episodio").innerHTML = `Línea naranja: la proyección de hoy con el error que el modelo tuvo al pronosticar desde <b>${mesAnio(origen)}</b>.`;
+    } else if (total) {
+      $("#sim-episodio").textContent = `Listo: ${total} futuros posibles, uno por cada mes entre ${mesAnio(todos.origen[0])} y ${mesAnio(todos.origen[total - 1])} en que se puso a prueba el modelo.`;
+    }
+    pintarResultados();
+  }
+
+  function pintarResultados() {
+    const i = SIM.h - 1;
+    const central = SIM.central[i];
+    const valores = valoresEn(i);
+    const ordenados = valores.slice().sort((a, b) => a - b);
+    const hay = valores.length >= 8;
+    const suben = valores.filter((v) => v > Y0).length;
+    const sobre = valores.filter((v) => v > SIM.umbral).length;
+    const cambio = central - Y0;
+    const error = rmse(SIM.modelo, SIM.h);
+    const errorPaseo = rmse("paseo_aleatorio", SIM.h);
+    const fecha = mesAnio(FECHAS[i]);
+    $("#sim-resultados").innerHTML = `
+      <div class="dato"><span>Tasa esperada en ${fecha}</span><strong>${pct(central)}</strong>
+        <small><b class="${clase(cambio)}">${flecha(cambio)} ${pp(cambio)}</b> frente a hoy (${pct(Y0)})</small></div>
+      <div class="dato"><span>Rango probable (80 %)</span><strong>${hay ? `${num(cuantil(ordenados, 0.1), 1)} – ${num(cuantil(ordenados, 0.9), 1)} %` : "…"}</strong>
+        <small>8 de cada 10 futuros simulados terminan aquí</small></div>
+      <div class="dato"><span>Probabilidad de que suba</span><strong>${hay ? `${num((suben / valores.length) * 100, 0)} %` : "…"}</strong>
+        <small>${suben} de ${valores.length} futuros quedan por encima de hoy</small></div>
+      <div class="dato"><span>Error típico a este plazo</span><strong>${error === null ? "—" : `±${num(error)} pp`}</strong>
+        <small>${errorPaseo ? `Suponer tasa constante falla ±${num(errorPaseo)} pp` : ""}</small></div>`;
+    $("#hist-titulo").textContent = `Dónde termina la tasa en ${fecha}`;
+    $("#hist-sub").textContent = `Cada barra cuenta cuántos de los ${valores.length} futuros simulados caen en ese tramo. En naranja, los que superan ${pct(SIM.umbral, 2)}.`;
+    $("#s-umbral-val").textContent = valores.length ? `= ${num((sobre / valores.length) * 100, 0)} %` : "";
+    histograma($("#g-hist"), valores, central);
+  }
+
+  function histograma(contenedor, valores, central) {
+    const W = Math.max(280, Math.floor(contenedor.clientWidth));
+    const H = 210;
+    const m = { l: 34, r: 14, t: 22, b: 26 };
+    const todos = episodios().e;
+    const i = SIM.h - 1;
+    let minimo = Y0;
+    let maximo = Y0;
+    todos.forEach((fila) => {
+      const v = SIM.central[i] + fila[i];
+      if (v < minimo) minimo = v;
+      if (v > maximo) maximo = v;
+    });
+    const rango = maximo - minimo;
+    const paso = rango > 16 ? 1 : rango > 7 ? 0.5 : 0.25;
+    const inicio = Math.floor(minimo / paso) * paso;
+    const fin = Math.ceil((maximo + 1e-9) / paso) * paso;
+    const cajas = Math.max(1, Math.round((fin - inicio) / paso));
+    const cuenta = new Array(cajas).fill(0);
+    valores.forEach((v) => { cuenta[Math.min(cajas - 1, Math.max(0, Math.floor((v - inicio) / paso)))] += 1; });
+    const tope = Math.max(4, ...cuenta, Math.ceil(todos.length / Math.max(4, cajas / 3)));
+    const escala = ticksY(0, tope, 3);
+    const yTope = escala.ticks[escala.ticks.length - 1];
+    const sx = (v) => m.l + ((v - inicio) / (fin - inicio)) * (W - m.l - m.r);
+    const sy = (c) => m.t + (1 - c / yTope) * (H - m.t - m.b);
+    const anchoCaja = (W - m.l - m.r) / cajas;
+    const anchoBarra = Math.max(2, Math.min(24, anchoCaja - 2));
+    let svg = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Distribución de la tasa simulada">`;
+    escala.ticks.forEach((v) => {
+      svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--rejilla)"/><text x="${m.l - 8}" y="${sy(v) + 4}" text-anchor="end">${v}</text>`;
+    });
+    const cada = Math.max(1, Math.ceil(cajas / Math.floor((W - m.l - m.r) / 52)));
+    for (let k = 0; k <= cajas; k += cada) {
+      const v = inicio + k * paso;
+      svg += `<text x="${sx(v)}" y="${H - 8}" text-anchor="middle">${num(v, paso < 1 ? 1 : 0)}</text>`;
+    }
+    cuenta.forEach((c, k) => {
+      if (!c) return;
+      const x = sx(inicio + k * paso) + (anchoCaja - anchoBarra) / 2;
+      const y = sy(c);
+      const alto = H - m.b - y;
+      const r = Math.min(4, alto, anchoBarra / 2);
+      const desde = inicio + k * paso;
+      const sobreUmbral = desde >= SIM.umbral;
+      svg += `<path d="M${x},${H - m.b}V${y + r}q0,-${r} ${r},-${r}h${anchoBarra - 2 * r}q${r},0 ${r},${r}V${H - m.b}z" fill="${sobreUmbral ? "var(--s2)" : "var(--s1)"}" data-tip="<b>${num(desde, 2)} – ${num(desde + paso, 2)} %</b><div><span>Futuros simulados</span><em>${c}</em></div>"/>`;
+    });
+    const raya = (v, texto, ancla) => {
+      if (v < inicio || v > fin) return "";
+      const x = sx(v);
+      return `<line x1="${x}" x2="${x}" y1="${m.t - 6}" y2="${H - m.b}" stroke="var(--tinta-2)" stroke-width="1.2"/><text class="rotulo" x="${x + (ancla === "end" ? -5 : 5)}" y="${m.t - 9}" text-anchor="${ancla}">${texto}</text>`;
+    };
+    svg += raya(Y0, `Hoy ${num(Y0, 1)}`, central >= Y0 ? "end" : "start");
+    svg += raya(central, `Esperada ${num(central, 1)}`, central >= Y0 ? "start" : "end");
+    svg += "</svg>";
+    contenedor.innerHTML = svg;
+  }
+
+  function cuadroSim(ahora) {
+    if (SIM.corriendo && SIM.visible && SIM.jugados < SIM.orden.length) {
+      const paso = Math.min(0.1, (ahora - SIM.previo) / 1000);
+      SIM.acumulado += paso * VELOCIDADES[Number($("#s-vel").value) - 1];
+      const nuevos = Math.floor(SIM.acumulado);
+      if (nuevos > 0) {
+        SIM.acumulado -= nuevos;
+        SIM.jugados = Math.min(SIM.orden.length, SIM.jugados + nuevos);
+        pintarSimDinamico();
+        if (SIM.jugados >= SIM.orden.length) pintarEtiquetasControles();
+      }
+    }
+    SIM.previo = ahora;
+    requestAnimationFrame(cuadroSim);
+  }
+
+  function conectarSim() {
+    $("#s-modelo").addEventListener("change", (evento) => {
+      SIM.modelo = evento.target.value;
+      SIM.corriendo = !MOVIMIENTO_REDUCIDO;
+      reiniciarSim();
+    });
+    ["#s-h", "#s-pol", "#s-m2", "#s-inf"].forEach((id) => $(id).addEventListener("input", () => {
+      leerControles();
+      pintarSimEstatico();
+    }));
+    $("#s-umbral").addEventListener("input", () => { leerControles(); pintarResultados(); });
+    $("#s-restablecer").addEventListener("click", () => {
+      $("#s-pol").value = 0;
+      $("#s-m2").value = ESCENARIO_BASE.m2;
+      $("#s-inf").value = ESCENARIO_BASE.inf;
+      leerControles();
+      pintarSimEstatico();
+    });
+    $("#s-play").addEventListener("click", () => {
+      if (SIM.jugados >= SIM.orden.length) { SIM.corriendo = true; reiniciarSim(); return; }
+      SIM.corriendo = !SIM.corriendo;
+      pintarEtiquetasControles();
+    });
+    $("#s-reiniciar").addEventListener("click", () => { SIM.corriendo = true; reiniciarSim(); });
+    new IntersectionObserver((entradas) => { SIM.visible = entradas[0].isIntersecting; }, { threshold: 0.15 }).observe($("#g-sim"));
+    requestAnimationFrame(cuadroSim);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Crédito                                                             */
+  /* ------------------------------------------------------------------ */
+
+  function cuotaMensual(monto, tasaEA, meses) {
+    const i = (1 + tasaEA / 100) ** (1 / 12) - 1;
+    if (i === 0) return monto / meses;
+    return (monto * i) / (1 - (1 + i) ** -meses);
+  }
+
+  function leerMonto() {
+    const limpio = Number($("#c-monto").value.replace(/[^\d]/g, ""));
+    return Number.isFinite(limpio) && limpio > 0 ? limpio : 0;
+  }
+
+  function pintarCredito() {
+    const monto = leerMonto();
+    const plazo = Number($("#c-plazo").value);
+    const h = Number($("#c-cuando").value);
+    const anios = plazo / 12;
+    $("#c-plazo-val").textContent = `${plazo} meses${plazo % 12 === 0 ? ` (${anios} ${anios === 1 ? "año" : "años"})` : ""}`;
+    const senda = D.proyeccion[PRINCIPAL];
+    const futura = senda.central[h - 1];
+    const baja = senda.b80i[h - 1];
+    const alta = senda.b80s[h - 1];
+    const cuotaHoy = cuotaMensual(monto, Y0, plazo);
+    const cuotaFutura = cuotaMensual(monto, futura, plazo);
+    const diferencia = cuotaFutura - cuotaHoy;
+    const tarjeta = (titulo, tasa, cuota, extra, destacada) => `
+      <div class="tarjeta cuota${destacada ? " destacada" : ""}">
+        <h3>${titulo}</h3>
+        <p class="grande">${pesos(cuota)} <small>al mes</small></p>
+        <dl>
+          <dt>Tasa efectiva anual</dt><dd>${pct(tasa)}</dd>
+          <dt>Intereses en todo el crédito</dt><dd>${pesos(cuota * plazo - monto)}</dd>
+          <dt>Total que pagarías</dt><dd>${pesos(cuota * plazo)}</dd>
+          ${extra}
+        </dl>
+      </div>`;
+    const usura = VIVO.usura.usura;
+    $("#c-salida").innerHTML = !monto ? '<div class="tarjeta">Escribe un monto para calcular la cuota.</div>' : `
+      <div class="cuotas">
+        ${tarjeta(`Si lo pides hoy`, Y0, cuotaHoy, "", false)}
+        ${tarjeta(`Si lo pides en ${mesAnio(FECHAS[h - 1])}`, futura, cuotaFutura,
+          `<dt>Cuota en el rango del 80 %</dt><dd>${pesos(cuotaMensual(monto, baja, plazo))} – ${pesos(cuotaMensual(monto, alta, plazo))}</dd>`, true)}
+      </div>
+      <div class="tarjeta veredicto">
+        ${Math.abs(diferencia) < 1
+          ? "Con la proyección actual, la cuota sería prácticamente la misma."
+          : `Según la proyección, esperar ${h} ${h === 1 ? "mes" : "meses"} ${diferencia > 0 ? "encarecería" : "abarataría"} la cuota en unos
+             <b class="${clase(diferencia)}">${pesos(Math.abs(diferencia))} al mes</b>
+             (${pesos(Math.abs(diferencia) * plazo)} en todo el crédito). Es una estimación con incertidumbre: mira el rango.`}
+      </div>
+      ${usura ? `<div class="tarjeta tope"><span><b>Tope legal vigente: ${pct(usura)} efectiva anual.</b>
+        Ninguna entidad puede cobrarte más que la tasa de usura en un crédito de consumo. A esa tasa, la cuota de este crédito sería ${pesos(cuotaMensual(monto, usura, plazo))} al mes.</span></div>` : ""}`;
+  }
+
+  function conectarCredito() {
+    $("#c-cuando").innerHTML = [1, 3, 6, 12, 18, 24]
+      .map((h) => `<option value="${h}"${h === 6 ? " selected" : ""}>En ${h} ${h === 1 ? "mes" : "meses"} (${mesAnio(FECHAS[h - 1])})</option>`)
+      .join("");
+    $("#c-monto").addEventListener("input", (evento) => {
+      const limpio = evento.target.value.replace(/[^\d]/g, "").slice(0, 12);
+      evento.target.value = limpio ? Number(limpio).toLocaleString("es-CO") : "";
+      pintarCredito();
+    });
+    $("#c-plazo").addEventListener("input", pintarCredito);
+    $("#c-cuando").addEventListener("change", pintarCredito);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Mercado                                                             */
+  /* ------------------------------------------------------------------ */
+
+  let ordenBancos = "monto";
+
+  function pintarBancos() {
+    const entidades = VIVO.bancos.entidades;
+    const destino = $("#g-bancos");
+    if (!entidades.length) { destino.innerHTML = '<p class="pie-grafico">Sin datos de entidades.</p>'; return; }
+    const sistema = promedioSistema(entidades);
+    const usura = VIVO.usura.usura || 0;
+    const relevantes = entidades.filter((e) => e.creditos >= 50);
+    const lista = (ordenBancos === "tasa"
+      ? relevantes.slice().sort((a, b) => a.tasa - b.tasa)
+      : entidades.slice().sort((a, b) => b.monto - a.monto)).slice(0, 14);
+    const tope = Math.max(usura, ...lista.map((e) => e.tasa)) * 1.04;
+    const fila = (nombre, tasa, detalle, promedio) => `
+      <div class="barra-fila${promedio ? " promedio" : ""}" data-tip="${esc(detalle)}">
+        <span class="nombre">${esc(nombre)}</span>
+        <div class="pista"><div class="relleno" style="width:${(tasa / tope) * 100}%"></div>${usura ? `<div class="raya" style="left:${(usura / tope) * 100}%"></div>` : ""}</div>
+        <span class="valor">${pct(tasa)}</span>
+      </div>`;
+    const detalle = (e) => `<b>${esc(e.entidad)}</b><div><span>Tasa promedio</span><em>${pct(e.tasa)}</em></div><div><span>Desembolsado</span><em>${pesosCortos(e.monto)}</em></div><div><span>Créditos</span><em>${num(e.creditos, 0)}</em></div>`;
+    destino.innerHTML =
+      fila("Promedio del sistema", sistema.tasa, `<b>Promedio ponderado por monto</b><div><span>Tasa</span><em>${pct(sistema.tasa)}</em></div><div><span>Desembolsado</span><em>${pesosCortos(sistema.monto)}</em></div>`, true) +
+      lista.map((e) => fila(e.entidad, e.tasa, detalle(e), false)).join("");
+    $("#bancos-sub").textContent = `Semana al ${diaCorto(VIVO.bancos.corte)} · ${entidades.length} entidades · ${pesosCortos(sistema.monto)} desembolsados`;
+    $("#bancos-pie").textContent =
+      (ordenBancos === "tasa" ? "Entidades con al menos 50 créditos en la semana, de menor a mayor tasa. " : "Las 14 entidades que más prestaron en la semana. ") +
+      (usura ? `La raya vertical marca el tope legal (${pct(usura)}). ` : "") +
+      "Tasa efectiva anual promedio ponderada por monto. Fuente: Superintendencia Financiera.";
+  }
+
+  function pintarSemanal() {
+    const semanal = D.mercado.semanal;
+    if (!semanal) return;
+    const libre = semanal.fecha.map((f, i) => [ms(f), semanal.tasa[i]]);
+    const inicio = libre[0][0] - 7 * 86400000;
+    const consumo = D.semanal.fecha.map((f, i) => [ms(f), D.semanal.y[i]]).filter(([t]) => t >= inicio);
+    grafico($("#g-semanal"), {
+      titulo: "Tasas semanales de libre inversión y de consumo",
+      alto: 230,
+      series: [
+        { nombre: "Libre inversión (Superintendencia)", color: "var(--s2)", p: libre, puntoFinal: true },
+        { nombre: "Consumo total (Banco de la República)", color: "var(--s1)", p: consumo, puntoFinal: true },
+      ],
+      xFmt: (t) => `Semana al ${diaCorto(t)}`,
+    });
+    leyenda($("#sem-leyenda"), [
+      { nombre: "Libre inversión (Superintendencia)", color: "var(--s2)" },
+      { nombre: "Consumo total (Banco de la República)", color: "var(--s1)" },
+    ]);
+  }
+
+  function pintarTRM() {
+    const serie = VIVO.trm.serie;
+    if (!serie.length) return;
+    const desde = serie[serie.length - 1][0] - 366 * 86400000;
+    const reciente = serie.filter(([t]) => t >= desde);
+    const ultimo = reciente[reciente.length - 1];
+    const primero = reciente[0];
+    const variacion = (ultimo[1] / primero[1] - 1) * 100;
+    $("#trm-sub").textContent = `Pesos por dólar · ${signo(variacion)}${num(Math.abs(variacion), 1)} % en doce meses`;
+    grafico($("#g-trm"), {
+      titulo: "TRM del último año",
+      alto: 200,
+      margenDer: 16,
+      series: [{ nombre: "TRM", color: "var(--s6)", p: reciente, area: false, puntoFinal: true }],
+      yFmt: (v) => num(v, 0),
+      vFmt: (v) => `$ ${num(v, 2)}`,
+      xFmt: diaCorto,
     });
   }
-}
 
-function iniciar() {
-  const modelo = document.getElementById("modelo");
-  ORDEN.forEach((clave) => {
-    const opcion = document.createElement("option");
-    opcion.value = clave;
-    opcion.textContent = D.nombres[clave];
-    modelo.appendChild(opcion);
-  });
-  modelo.value = "ridge_agregados";
-  const fechas = D.panel.fecha;
-  document.getElementById("desde").value = fechas[0];
-  document.getElementById("hasta").value = fechas[fechas.length - 1];
-  document.getElementById("desde").min = fechas[0];
-  document.getElementById("desde").max = fechas[fechas.length - 1];
-  document.getElementById("hasta").min = fechas[0];
-  document.getElementById("hasta").max = fechas[fechas.length - 1];
-  ["modelo", "horizonte", "desde", "hasta", "politica"].forEach((id) => {
-    document.getElementById(id).addEventListener("input", pintar);
-    document.getElementById(id).addEventListener("change", pintar);
-  });
-  document.querySelectorAll('input[name="vista"], input[name="seccion"]').forEach((input) => {
-    input.addEventListener("change", pintar);
-  });
-  pintar();
-}
+  /* ------------------------------------------------------------------ */
+  /* Historia                                                            */
+  /* ------------------------------------------------------------------ */
 
-iniciar();
+  const SERIES_HISTORIA = [
+    { id: "y", nombre: "Crédito de consumo", color: "var(--s1)", activa: true },
+    { id: "pol", nombre: "Tasa de política", color: "var(--s2)", activa: true },
+    { id: "usura", nombre: "Tope legal (usura)", color: "var(--s3)", activa: true },
+    { id: "inflacion", nombre: "Inflación anual", color: "var(--s4)", activa: false },
+    { id: "fed", nombre: "Tasa de la Fed", color: "var(--s5)", activa: false },
+  ];
+  let aniosHistoria = 0;
+
+  function recorte(campo) {
+    const limite = aniosHistoria ? Date.UTC(partes(ms(ORIGEN))[0] - aniosHistoria, partes(ms(ORIGEN))[1], 1) : -Infinity;
+    const salida = [];
+    P.fecha.forEach((f, i) => {
+      const t = ms(f);
+      if (t >= limite && P[campo]) salida.push([t, P[campo][i]]);
+    });
+    return salida;
+  }
+
+  function pintarHistoria() {
+    const activas = SERIES_HISTORIA.filter((s) => s.activa && P[s.id]);
+    grafico($("#g-historia"), {
+      titulo: "Historia de la tasa de consumo y sus determinantes",
+      alto: 360,
+      desdeCero: true,
+      series: activas.map((s) => ({ nombre: s.nombre, color: s.color, p: recorte(s.id), ancho: s.id === "y" ? 2.4 : 1.8 })),
+    });
+    grafico($("#g-dinero"), {
+      titulo: "Crecimiento anual de los agregados monetarios",
+      alto: 230,
+      series: [
+        { nombre: "M1", color: "var(--s1)", p: recorte("g_m1"), ancho: 1.8 },
+        { nombre: "M2", color: "var(--s2)", p: recorte("g_m2"), ancho: 1.8 },
+        { nombre: "M3", color: "var(--s3)", p: recorte("g_m3"), ancho: 1.8 },
+      ],
+      lineasH: [{ v: 0 }],
+    });
+    leyenda($("#dinero-leyenda"), [
+      { nombre: "M1 (efectivo y cuentas corrientes)", color: "var(--s1)" },
+      { nombre: "M2 (más ahorros y CDT)", color: "var(--s2)" },
+      { nombre: "M3 (todo lo anterior y otros depósitos)", color: "var(--s3)" },
+    ]);
+    if (P.trm) {
+      grafico($("#g-trm-hist"), {
+        titulo: "TRM promedio mensual",
+        alto: 230,
+        series: [{ nombre: "TRM", color: "var(--s6)", p: recorte("trm") }],
+        yFmt: (v) => num(v, 0),
+        vFmt: (v) => `$ ${num(v, 0)}`,
+      });
+    }
+  }
+
+  function conectarHistoria() {
+    const chips = $("#h-series");
+    chips.innerHTML = SERIES_HISTORIA.filter((s) => P[s.id])
+      .map((s) => `<button type="button" class="chip" data-serie="${s.id}" aria-pressed="${s.activa}" style="--c:${s.color}"><i></i>${s.nombre}</button>`)
+      .join("");
+    chips.addEventListener("click", (evento) => {
+      const boton = evento.target.closest("[data-serie]");
+      if (!boton) return;
+      const serie = SERIES_HISTORIA.find((s) => s.id === boton.dataset.serie);
+      if (serie.activa && SERIES_HISTORIA.filter((s) => s.activa).length === 1) return;
+      serie.activa = !serie.activa;
+      boton.setAttribute("aria-pressed", String(serie.activa));
+      pintarHistoria();
+    });
+    $("#h-rango").addEventListener("click", (evento) => {
+      const boton = evento.target.closest("[data-anios]");
+      if (!boton) return;
+      aniosHistoria = Number(boton.dataset.anios);
+      $$("#h-rango button").forEach((b) => b.classList.toggle("activo", b === boton));
+      pintarHistoria();
+    });
+    $$("#mercado .segmento button").forEach((boton) => boton.addEventListener("click", () => {
+      ordenBancos = boton.dataset.orden;
+      $$("#mercado .segmento button").forEach((b) => b.classList.toggle("activo", b === boton));
+      pintarBancos();
+    }));
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Confiabilidad y método                                              */
+  /* ------------------------------------------------------------------ */
+
+  function tabla(cabeza, filas) {
+    return `<table><thead><tr>${cabeza.map((c) => `<th>${c}</th>`).join("")}</tr></thead><tbody>${filas.join("")}</tbody></table>`;
+  }
+
+  function pintarConfianza() {
+    const metricas = D.metricas[PRINCIPAL];
+    const paseo = D.metricas.paseo_aleatorio;
+    const cobertura = D.cobertura[PRINCIPAL];
+    const dato = (h) => `<div class="dato"><span>Error típico a ${h} ${h === 1 ? "mes" : "meses"}</span><strong>±${num(metricas.rmse[h - 1])} pp</strong>
+      <small>${num((1 - metricas.rmse[h - 1] / paseo.rmse[h - 1]) * 100, 0)} % menos que suponer tasa constante (±${num(paseo.rmse[h - 1])} pp)</small></div>`;
+    $("#conf-fichas").innerHTML = dato(1) + dato(6) + dato(12) +
+      `<div class="dato"><span>Aciertos reales del rango del 80 %</span><strong>${num(cobertura.c80[11] * 100, 0)} %</strong>
+       <small>A 12 meses el dato cayó dentro del rango menos de lo prometido (${num(cobertura.c80[0] * 100, 0)} % a 1 mes): tómalo como un rango optimista.</small></div>`;
+
+    const horizontes = Array.from({ length: HMAX }, (_, i) => i + 1);
+    const lineas = [
+      { id: "paseo_aleatorio", color: "var(--neutro)", ancho: 1.8, guion: "5 4" },
+      { id: PRINCIPAL, color: "var(--s1)", ancho: 2.4 },
+    ].filter((l) => D.metricas[l.id]);
+    grafico($("#g-rmse"), {
+      titulo: "Error típico por plazo",
+      alto: 270,
+      desdeCero: true,
+      series: lineas.map((l) => ({ nombre: D.nombres[l.id], color: l.color, ancho: l.ancho, guion: l.guion, p: horizontes.map((h) => [h, D.metricas[l.id].rmse[h - 1]]) })),
+      xTicks: [1, 3, 6, 9, 12, 15, 18, 21, 24].map((h) => ({ t: h, texto: h === 1 ? "1 mes" : String(h) })),
+      xFmt: (h) => `Plazo de ${h} ${h === 1 ? "mes" : "meses"}`,
+      vFmt: (v) => `±${num(v)} pp`,
+    });
+    leyenda($("#rmse-leyenda"), lineas.map((l) => ({ nombre: D.nombres[l.id], color: l.color, tipo: l.guion ? "guion" : "" })));
+
+    const nuevas = D.variables_nuevas;
+    if (nuevas.length) {
+      const base = nuevas.find((v) => v.id === "base");
+      const filas = nuevas.map((v) => {
+        const celdas = v.rmse.map((valor, i) => {
+          if (v.id === "base") return `<td>${num(valor)}</td>`;
+          const d = valor - base.rmse[i];
+          const tipo = d < -0.005 ? "mejora" : d > 0.005 ? "empeora" : "neutro";
+          return `<td><span class="${tipo}">${signo(d)}${num(Math.abs(d))}</span></td>`;
+        }).join("");
+        return `<tr${v.id === "base" ? ' class="principal"' : ""}><td>${esc(v.id === "base" ? "Modelo base (error en pp)" : v.etiqueta.replace(/^\+\s*/, ""))}</td>${celdas}</tr>`;
+      });
+      $("#t-nuevas").innerHTML = tabla(["Dato sumado al modelo", ...base.horizonte.map((h) => `${h} m`)], filas) +
+        '<p class="pie-grafico">Ningún dato nuevo mejora todos los plazos. La tasa real de política es la que más ayuda, y por eso entra en dos modelos candidatos.</p>';
+    } else {
+      $("#t-nuevas").innerHTML = '<p class="pie-grafico">El contraste de datos nuevos aparece al correr el estudio completo.</p>';
+    }
+
+    const plazos = [1, 3, 6, 12, 24];
+    const modelos = Object.keys(D.nombres).filter((m) => D.metricas[m]);
+    const mejor = plazos.map((h) => Math.min(...modelos.map((m) => D.metricas[m].rmse[h - 1])));
+    const orden = modelos.slice().sort((a, b) => D.metricas[a].rmse[11] - D.metricas[b].rmse[11]);
+    $("#t-modelos").innerHTML = tabla(
+      ["Modelo", ...plazos.map((h) => `${h} ${h === 1 ? "mes" : "meses"}`), "Frente a tasa constante, 12 m"],
+      orden.map((m) => {
+        const razon = D.metricas[m].rmse[11] / paseo.rmse[11] - 1;
+        const etiqueta = m === PRINCIPAL ? '<span class="etiqueta">Principal</span>' : ["ridge_real", "combinado"].includes(m) ? '<span class="etiqueta">Nuevo</span>' : "";
+        return `<tr${m === PRINCIPAL ? ' class="principal"' : ""}><td>${esc(D.nombres[m])}${etiqueta}</td>${plazos
+          .map((h, i) => `<td${Math.abs(D.metricas[m].rmse[h - 1] - mejor[i]) < 1e-9 ? ' class="mejor"' : ""}>${num(D.metricas[m].rmse[h - 1])}</td>`)
+          .join("")}<td>${m === "paseo_aleatorio" ? "referencia" : `<span class="${razon < 0 ? "mejora" : "empeora"}">${signo(razon)}${num(Math.abs(razon) * 100, 0)} %</span>`}</td></tr>`;
+      }),
+    );
+  }
+
+  function pintarMetodo() {
+    $("#t-fuentes").innerHTML = tabla(
+      ["Serie", "Entidad", "Frecuencia"],
+      D.fuentes.map((f) => `<tr><td><a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.serie)}</a></td><td>${esc(f.entidad)}</td><td>${esc(f.frecuencia)}</td></tr>`),
+    );
+    const coeficientes = D.estudio.coeficientes;
+    if (!coeficientes) return;
+    const h = 12;
+    const pares = Object.keys(coeficientes).map((variable) => ({ variable, valor: coeficientes[variable][h - 1] }));
+    const tope = Math.max(...pares.map((p) => Math.abs(p.valor))) * 1.05;
+    $("#coef-sub").textContent = `Puntos que mueve la proyección a ${h} meses cuando cada variable sube una desviación estándar`;
+    $("#g-coef").innerHTML = pares.map((p) => {
+      const ancho = (Math.abs(p.valor) / tope) * 50;
+      const estilo = p.valor >= 0 ? `left:50%;width:${ancho}%` : `left:${50 - ancho}%;width:${ancho}%;border-radius:4px 0 0 4px`;
+      return `<div class="barra-fila" data-tip="<b>${esc(D.etiquetas[p.variable] || p.variable)}</b><div><span>Efecto a ${h} meses</span><em>${pp(p.valor)}</em></div>">
+        <span class="nombre">${esc(D.etiquetas[p.variable] || p.variable)}</span>
+        <div class="pista"><div class="cero" style="left:50%"></div><div class="relleno${p.valor < 0 ? " neg" : ""}" style="${estilo}"></div></div>
+        <span class="valor">${signo(p.valor)}${num(Math.abs(p.valor))}</span></div>`;
+    }).join("") + '<p class="pie-grafico">Azul: empuja la tasa hacia arriba. Naranja: hacia abajo. M2 y M3 se mueven casi juntos, así que sus efectos por separado no deben leerse como causa.</p>';
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Arranque                                                            */
+  /* ------------------------------------------------------------------ */
+
+  function conectarInterfaz() {
+    const raiz = document.documentElement;
+    try {
+      const guardado = localStorage.getItem("tasaviva-tema");
+      if (guardado) raiz.dataset.theme = guardado;
+    } catch (error) { /* sin almacenamiento */ }
+    $("#tema").addEventListener("click", () => {
+      const oscuro = raiz.dataset.theme ? raiz.dataset.theme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+      raiz.dataset.theme = oscuro ? "light" : "dark";
+      try { localStorage.setItem("tasaviva-tema", raiz.dataset.theme); } catch (error) { /* sin almacenamiento */ }
+    });
+    const enlaces = $$(".nav a");
+    const observador = new IntersectionObserver((entradas) => {
+      entradas.forEach((entrada) => {
+        if (!entrada.isIntersecting) return;
+        enlaces.forEach((a) => a.classList.toggle("activo", a.getAttribute("href") === `#${entrada.target.id}`));
+      });
+    }, { rootMargin: "-30% 0px -60% 0px" });
+    $$("main section[id]").forEach((seccion) => observador.observe(seccion));
+  }
+
+  function pintarTodo() {
+    pintarHeroe();
+    pintarSimEstatico();
+    pintarBancos();
+    pintarSemanal();
+    pintarTRM();
+    pintarHistoria();
+    pintarConfianza();
+  }
+
+  function arrancar() {
+    conectarInterfaz();
+    pintarTitular();
+    pintarFichas();
+    llenarControles();
+    leerControles();
+    conectarSim();
+    conectarCredito();
+    conectarHistoria();
+    reiniciarSim();
+    pintarCredito();
+    pintarMetodo();
+    pintarTodo();
+    pintarChip();
+    refrescarVivo();
+    setInterval(refrescarVivo, REFRESCO_MS);
+    setInterval(pintarReloj, 1000);
+    let espera = null;
+    let anchoPrevio = window.innerWidth;
+    window.addEventListener("resize", () => {
+      if (window.innerWidth === anchoPrevio) return;
+      anchoPrevio = window.innerWidth;
+      clearTimeout(espera);
+      espera = setTimeout(pintarTodo, 150);
+    });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", arrancar);
+  else arrancar();
+})();

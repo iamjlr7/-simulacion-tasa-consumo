@@ -36,6 +36,7 @@ from src.config import (
     COL_META,
     COL_POLITICA,
     DATOS_CRUDOS,
+    DATOS_EXTERNOS,
     FIN_MUESTRA,
     FORMATO_FECHA,
     INICIO_MUESTRA,
@@ -141,6 +142,60 @@ def construir_base(
             faltantes = panel.isna().sum().to_dict()
             raise ValueError(f"El panel de modelado tiene huecos: {faltantes}.")
     return panel
+
+
+def _mensual_externo(ruta: Path, columna: str) -> pd.Series:
+    """Promedio mensual, fechado al cierre, de una serie diaria descargada."""
+    tabla = pd.read_csv(ruta, parse_dates=["fecha"]).set_index("fecha")
+    return _fin_de_mes(tabla[columna].astype(float), "mean")
+
+
+def cargar_externos(
+    indice: pd.DatetimeIndex,
+    directorio: Path | str | None = None,
+) -> pd.DataFrame:
+    """Series abiertas que complementan al Banco de la República, por mes.
+
+    Devuelve la TRM y la tasa de fondos federales como promedio del mes, y el
+    interés bancario corriente con su usura vigentes al cierre. El interés
+    bancario corriente publicado empieza en abril de 2007: antes queda vacío.
+    Si la carpeta de descargas no existe, devuelve una tabla sin columnas.
+    """
+    carpeta = Path(directorio) if directorio is not None else DATOS_EXTERNOS
+    salida = pd.DataFrame(index=indice)
+    ruta_trm = carpeta / "trm_diaria.csv"
+    ruta_fed = carpeta / "fed_effr_diaria.csv"
+    ruta_ibc = carpeta / "interes_bancario_corriente.csv"
+    if ruta_trm.is_file():
+        salida["trm"] = _mensual_externo(ruta_trm, "trm").reindex(indice)
+    if ruta_fed.is_file():
+        salida["fed"] = _mensual_externo(ruta_fed, "effr").reindex(indice)
+    if ruta_ibc.is_file():
+        vigencias = pd.read_csv(ruta_ibc, parse_dates=["desde", "hasta"]).sort_values("desde")
+        ibc = pd.Series(np.nan, index=indice, dtype=float)
+        usura = pd.Series(np.nan, index=indice, dtype=float)
+        for fila in vigencias.itertuples():
+            vigente = (indice >= fila.desde) & (indice <= fila.hasta + pd.offsets.MonthEnd(0))
+            ibc[vigente] = float(fila.ibc)
+            usura[vigente] = float(fila.usura)
+        salida["ibc"] = ibc
+        salida["usura"] = usura
+    return salida
+
+
+def cargar_mercado(directorio: Path | str | None = None) -> dict[str, pd.DataFrame]:
+    """Tasas de libre inversión de la Superintendencia: por entidad y por semana."""
+    carpeta = Path(directorio) if directorio is not None else DATOS_EXTERNOS
+    salida: dict[str, pd.DataFrame] = {}
+    for clave, nombre in (
+        ("por_entidad", "libre_inversion_por_entidad.csv"),
+        ("semanal", "libre_inversion_semanal.csv"),
+        ("ibc", "interes_bancario_corriente.csv"),
+    ):
+        ruta = carpeta / nombre
+        if ruta.is_file():
+            salida[clave] = pd.read_csv(ruta)
+    return salida
 
 
 def observacion_parcial(directorio: Path | str | None = None) -> dict[str, Any]:

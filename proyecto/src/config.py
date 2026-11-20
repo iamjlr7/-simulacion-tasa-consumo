@@ -5,9 +5,20 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+NOMBRE_PROYECTO = "TasaViva"
+LEMA_PROYECTO = "Simulador en tiempo real de la tasa de crédito de consumo en Colombia"
+AUTORES: tuple[str, ...] = (
+    "Orlando José León Romero",
+    "Leyber David Peñaloza",
+    "Johan Cruz",
+)
+DERECHOS = "© 2026 " + ", ".join(AUTORES[:-1]) + " y " + AUTORES[-1] + ". Todos los derechos reservados."
+
 RAIZ: Path = Path(__file__).resolve().parents[1]
 DATOS_CRUDOS: Path = RAIZ / "data" / "raw"
 DATOS_PROCESADOS: Path = RAIZ / "data" / "processed"
+DATOS_EXTERNOS: Path = DATOS_CRUDOS / "externos"
+SITIO: Path = RAIZ.parent / "sitio"
 TIENDA: Path = RAIZ.parent
 MEDIA: Path = TIENDA / "media"
 DOCS: Path = TIENDA / "docs"
@@ -66,6 +77,20 @@ FEATURES_AGREGADOS: tuple[str, ...] = (
     "g_m3",
 )
 FEATURES_TASA_POLITICA: tuple[str, ...] = ("dy3", "spread", "dpol3")
+# Ampliación con la tasa real de política (política menos inflación anual).
+FEATURES_REAL: tuple[str, ...] = FEATURES_AGREGADOS + ("tasa_real",)
+# Datos nuevos que se contrastan uno por uno sobre la especificación base.
+VARIABLES_NUEVAS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "base": ("Especificación base (seis variables)", ()),
+    "tasa_real": ("+ Tasa real de política", ("tasa_real",)),
+    "trm_anual": ("+ Depreciación anual del peso (TRM)", ("g_trm",)),
+    "trm_trimestre": ("+ Depreciación a 3 meses (TRM)", ("dtrm3",)),
+    "fed": ("+ Diferencial frente a la Fed", ("dif_fed",)),
+    "fed_cambio": ("+ Diferencial y variación de la Fed", ("dif_fed", "dfed3")),
+    "inflacion": ("+ Inflación anual", ("inflacion",)),
+    "usura": ("+ Holgura frente a la usura", ("holgura_usura",)),
+    "todo": ("+ TRM, Fed e inflación a la vez", ("g_trm", "dif_fed", "inflacion")),
+}
 ETIQUETA_FEATURE: dict[str, str] = {
     "dy3": "Variación a 3 meses de la tasa",
     "spread": "Spread frente a la política",
@@ -75,6 +100,12 @@ ETIQUETA_FEATURE: dict[str, str] = {
     "g_m3": "Crecimiento anual de M3",
     "inflacion": "Inflación total anual",
     "brecha_inflacion": "Brecha de inflación",
+    "tasa_real": "Tasa real de política",
+    "g_trm": "Depreciación anual del peso",
+    "dtrm3": "Depreciación a 3 meses del peso",
+    "dif_fed": "Diferencial política menos Fed",
+    "dfed3": "Variación a 3 meses de la Fed",
+    "holgura_usura": "Holgura frente a la usura",
 }
 
 NOMBRES_MODELO: dict[str, str] = {
@@ -91,6 +122,8 @@ NOMBRES_MODELO: dict[str, str] = {
     "gradiente": "Potenciación de gradiente",
     "ridge_inflacion": "Ridge con inflación",
     "ridge_brecha": "Ridge con brecha de inflación",
+    "ridge_real": "Ridge con tasa real de política",
+    "combinado": "Combinado (agregados + tasa real)",
 }
 
 # RMSE de referencia, en puntos porcentuales, redondeados a dos decimales

@@ -1,0 +1,40 @@
+{
+  "descargado": "2026-11-20T17:00:11+00:00",
+  "archivos": {
+    "trm_diaria.csv": {
+      "fuente": "Superintendencia Financiera de Colombia, datos.gov.co",
+      "direccion": "https://www.datos.gov.co/d/mcec-87by",
+      "filas": 12773,
+      "inicio": "1991-12-02",
+      "fin": "2026-11-20"
+    },
+    "fed_effr_diaria.csv": {
+      "fuente": "Banco de la Reserva Federal de Nueva York",
+      "direccion": "https://www.newyorkfed.org/markets/reference-rates/effr",
+      "filas": 6630,
+      "inicio": "2000-07-03",
+      "fin": "2026-11-19"
+    },
+    "interes_bancario_corriente.csv": {
+      "fuente": "Superintendencia Financiera de Colombia, datos.gov.co",
+      "direccion": "https://www.datos.gov.co/d/pare-7x5i",
+      "filas": 153,
+      "inicio": "2007-04-01",
+      "fin": "2026-11-01"
+    },
+    "libre_inversion_por_entidad.csv": {
+      "fuente": "Superintendencia Financiera de Colombia, datos.gov.co",
+      "direccion": "https://www.datos.gov.co/d/qzsc-9esp",
+      "filas": 604,
+      "inicio": "2026-07-03",
+      "fin": "2026-11-06"
+    },
+    "libre_inversion_semanal.csv": {
+      "fuente": "Superintendencia Financiera de Colombia, datos.gov.co",
+      "direccion": "https://www.datos.gov.co/d/qzsc-9esp",
+      "filas": 19,
+      "inicio": "2026-07-03",
+      "fin": "2026-11-06"
+    }
+  }
+}

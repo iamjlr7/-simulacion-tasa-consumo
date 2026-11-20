@@ -8,7 +8,9 @@ from pathlib import Path
 import pandas as pd
 
 from src.config import (
+    DERECHOS,
     HORIZONTES_REPORTE,
+    NOMBRE_PROYECTO,
     NOMBRES_MODELO,
     PROYECCION_REFERENCIA,
     RMSE_REFERENCIA,
@@ -60,6 +62,7 @@ def escribir_informe(
     eda: dict,
     graficos: list[Path],
     fallos: dict[str, int],
+    variables_nuevas: pd.DataFrame | None = None,
 ) -> None:
     """Escribe el informe de modelado con los resultados de esta ejecución."""
     ruta.parent.mkdir(parents=True, exist_ok=True)
@@ -75,7 +78,7 @@ def escribir_informe(
     lineas: list[str] = []
     a = lineas.append
 
-    a("# Proyección de la tasa de crédito de consumo en Colombia")
+    a(f"# {NOMBRE_PROYECTO}: proyección de la tasa de crédito de consumo en Colombia")
     a("")
     a("## Lectura para la decisión")
     a("")
@@ -681,6 +684,66 @@ def escribir_informe(
         "el pronóstico de mediano plazo y no el del mes siguiente."
     )
     a("")
+    if variables_nuevas is not None and len(variables_nuevas):
+        a("## Datos nuevos y su aporte")
+        a("")
+        a(
+            "Al estudio se le sumaron cuatro fuentes abiertas que no venían en los "
+            "archivos del Banco de la República: la TRM diaria, el interés bancario "
+            "corriente con su tasa de usura y las tasas de libre inversión por entidad "
+            "(Superintendencia Financiera, datos.gov.co), y la tasa efectiva de fondos "
+            "federales (Reserva Federal de Nueva York). `python -m src.fuentes` las "
+            "descarga y la página las refresca en vivo."
+        )
+        a("")
+        a(
+            "Cada dato se probó sumándolo a la especificación base, con el mismo "
+            "backtest y el mismo λ. La tabla da el RMSE en puntos porcentuales."
+        )
+        a("")
+        horizontes = sorted(int(h) for h in variables_nuevas["horizonte"].unique())
+        a("| Especificación | " + " | ".join(f"{h} m" for h in horizontes) + " |")
+        a("| --- | " + " | ".join("---:" for _ in horizontes) + " |")
+        tabla_nueva = variables_nuevas.pivot(index="id", columns="horizonte", values="rmse")
+        etiquetas = variables_nuevas.drop_duplicates("id").set_index("id")["etiqueta"]
+        for clave in etiquetas.index:
+            celdas = " | ".join(coma(float(tabla_nueva.loc[clave, h]), 3) for h in horizontes)
+            a(f"| {etiquetas[clave]} | {celdas} |")
+        a("")
+        base = tabla_nueva.loc["base"]
+        mejoras = []
+        for clave in etiquetas.index:
+            if clave == "base":
+                continue
+            ganados = [h for h in horizontes if float(tabla_nueva.loc[clave, h]) < float(base[h]) - 0.005]
+            if ganados:
+                mejoras.append(f"{etiquetas[clave].lstrip('+ ').strip()} ({', '.join(str(h) for h in ganados)} meses)")
+        if mejoras:
+            a(
+                "Bajan el error en más de 0,005 puntos, en los horizontes indicados: "
+                + "; ".join(mejoras)
+                + ". Ninguno mejora todos los horizontes a la vez."
+            )
+        else:
+            a("Ningún dato nuevo baja el error en más de 0,005 puntos.")
+        a("")
+        a(
+            "La lectura es sobria: la tasa de consumo ya resume casi toda la información "
+            "que traen el dólar, la Fed, la inflación y la usura. La tasa real de política "
+            "(política menos inflación) es la única que ayuda en varios horizontes, y por "
+            "eso entra en dos candidatos nuevos del backtest: el Ridge con tasa real y un "
+            "combinado que promedia ese Ridge con el de agregados, con pesos iguales "
+            "fijados de antemano. El modelo principal no cambia. Los datos nuevos se "
+            "quedan en la página como contexto y seguimiento en vivo."
+        )
+        a("")
+        for modelo_nuevo in ("ridge_real", "combinado"):
+            if modelo_nuevo in set(metricas["modelo"]):
+                celdas = ", ".join(
+                    f"{h} m: {coma(rmse(modelo_nuevo, h), 3)}" for h in HORIZONTES_REPORTE
+                )
+                a(f"- {NOMBRES_MODELO[modelo_nuevo]}. RMSE: {celdas}.")
+        a("")
     a("## Limitaciones")
     a("")
     a(
@@ -703,13 +766,14 @@ def escribir_informe(
     a("## Gráficos")
     a("")
     for grafico in graficos:
-        a(f"- `{grafico}`")
+        a(f"- `media/{grafico.name}`")
     a("")
     a("## Reproducción")
     a("")
     a("Desde el directorio `proyecto`:")
     a("")
     a("```bash")
+    a("python3 -m src.fuentes      # opcional: refresca los datos abiertos")
     a("python3 -m src.analisis")
     a("python3 -m pytest")
     a("python3 -m streamlit run app.py --server.address 0.0.0.0 --server.port 8501")
@@ -719,5 +783,9 @@ def escribir_informe(
         "Los CSV de origen usan separador `;`, decimal `,` y codificación `utf-8-sig`. "
         "Las versiones de las librerías están fijadas en `requirements.txt`."
     )
+    a("")
+    a("---")
+    a("")
+    a(DERECHOS)
     a("")
     ruta.write_text("\n".join(lineas), encoding="utf-8")
