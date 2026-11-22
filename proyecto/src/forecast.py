@@ -11,7 +11,13 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from src.config import COLUMNAS_PROYECCION, FEATURES_AGREGADOS, HORIZONTE_MAX
+from src.config import (
+    COLUMNAS_PROYECCION,
+    FEATURES_AGREGADOS,
+    HORIZONTE_MAX,
+    PREDICCION_POR_DEFECTO,
+    PREDICCIONES,
+)
 from src.intervals import aplicar_banda, cuantiles_residual
 from src.models import ModeloBase, RidgeDirecto
 
@@ -49,6 +55,23 @@ def construir_proyeccion(
         )
     tabla = pd.DataFrame(filas)
     return tabla.loc[:, list(COLUMNAS_PROYECCION)]
+
+
+def senda_prediccion(senda: pd.DataFrame, tipo: str = PREDICCION_POR_DEFECTO) -> pd.Series:
+    """Una sola senda por horizonte: optimista, conservadora o pesimista.
+
+    La conservadora es la proyección central. La optimista y la pesimista son
+    los bordes de la banda del 80 %, leídos por quien pide el crédito: la tasa
+    más baja es la buena noticia y la más alta, la mala.
+    """
+    if tipo not in PREDICCIONES:
+        raise ValueError(f"Predicción no reconocida: {tipo}. Usa una de {list(PREDICCIONES)}.")
+    ordenada = senda.sort_values("horizonte")
+    return pd.Series(
+        ordenada[PREDICCIONES[tipo]["columna"]].to_numpy(dtype=float),
+        index=ordenada["horizonte"].astype(int).to_numpy(),
+        name=tipo,
+    )
 
 
 def panel_escenario(

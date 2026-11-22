@@ -280,6 +280,24 @@ La última tasa mensual usada es la de septiembre de 2026. Cada horizonte tiene 
 
 El contraste parcial de octubre, 21,36 % con 4 viernes, se compara con la proyección a un mes de 21,53 %. Es un mes incompleto en los agregados y en el último viernes de tasas. No se usa para recalibrar ni para declarar que el modelo acertó o falló.
 
+## Tres predicciones para elegir
+
+Para quien no quiere leer bandas, la página y la aplicación dejan elegir una sola predicción entre tres. Todas salen de la misma proyección y están vistas por quien pide el crédito, para quien una tasa más alta es la mala noticia.
+
+- **Optimista.** La tasa termina en la parte baja de lo probable. Borde inferior del rango del 80 %. En las pruebas con datos del pasado, solo 1 de cada 10 veces la tasa terminó más abajo.
+- **Conservadora.** Lo más probable según los datos de hoy. Proyección central del modelo, sin sumarle ni restarle margen de error.
+- **Pesimista.** La tasa termina en la parte alta de lo probable. Borde superior del rango del 80 %. En las pruebas con datos del pasado, solo 1 de cada 10 veces la tasa terminó más arriba.
+
+| Plazo | Optimista | Conservadora | Pesimista |
+| ---: | ---: | ---: | ---: |
+| 1 mes | 20,98 % | 21,53 % | 22,11 % |
+| 3 meses | 21,01 % | 22,04 % | 23,01 % |
+| 6 meses | 21,19 % | 22,94 % | 24,43 % |
+| 12 meses | 20,91 % | 23,84 % | 25,72 % |
+| 24 meses | 20,58 % | 24,30 % | 30,01 % |
+
+La optimista y la pesimista no son límites: en el backtest la tasa real se salió de ese rango más veces de lo que el 80 % sugiere, sobre todo a 12 meses o más. Sirven para ver un caso bueno y uno malo razonables, no el peor posible.
+
 ## Cuánto aportan M1, M2 y M3
 
 La comparación limpia es el mismo Ridge, la misma ventana y el mismo λ, con las tres variables de tasa y política, y con esas tres más los crecimientos. La reducción del RMSE al añadir M1, M2 y M3 es:

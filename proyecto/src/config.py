@@ -144,6 +144,37 @@ REGIMENES: tuple[tuple[str, str, str], ...] = (
     ("2022-2023", "2022-01-01", "2023-12-31"),
 )
 
+# Tres lecturas de una misma proyección, vistas por quien pide el crédito:
+# para esa persona una tasa más alta es la mala noticia. Cada lectura es una
+# sola senda, el centro o un borde de la banda del 80 %.
+PREDICCIONES: dict[str, dict[str, str]] = {
+    "optimista": {
+        "nombre": "Optimista",
+        "columna": "banda_80_inferior",
+        "resumen": "La tasa termina en la parte baja de lo probable.",
+        "detalle": (
+            "Borde inferior del rango del 80 %. En las pruebas con datos del pasado, "
+            "solo 1 de cada 10 veces la tasa terminó más abajo."
+        ),
+    },
+    "conservadora": {
+        "nombre": "Conservadora",
+        "columna": "proyeccion",
+        "resumen": "Lo más probable según los datos de hoy.",
+        "detalle": "Proyección central del modelo, sin sumarle ni restarle margen de error.",
+    },
+    "pesimista": {
+        "nombre": "Pesimista",
+        "columna": "banda_80_superior",
+        "resumen": "La tasa termina en la parte alta de lo probable.",
+        "detalle": (
+            "Borde superior del rango del 80 %. En las pruebas con datos del pasado, "
+            "solo 1 de cada 10 veces la tasa terminó más arriba."
+        ),
+    },
+}
+PREDICCION_POR_DEFECTO = "conservadora"
+
 COLUMNAS_PROYECCION: tuple[str, ...] = (
     "modelo",
     "horizonte",

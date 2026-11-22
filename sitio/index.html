@@ -46,6 +46,10 @@
     <section id="resumen" class="seccion heroe">
       <div class="heroe-texto">
         <p class="sobre">Crédito de consumo · Colombia</p>
+        <div class="pred-caja">
+          <span class="pred-titulo" id="pred-titulo">Elige una predicción</span>
+          <div class="pred" data-pred role="group" aria-labelledby="pred-titulo"></div>
+        </div>
         <h1 id="titular">Proyección de la tasa de crédito de consumo</h1>
         <p class="bajada" id="bajada"></p>
         <div class="pasos" id="pasos" aria-label="Proyección por plazo"></div>
@@ -57,8 +61,8 @@
       </div>
       <figure class="tarjeta heroe-grafico">
         <figcaption>
-          <strong>Tasa observada y proyección</strong>
-          <span>Efectiva anual, promedio del mes. La franja es el rango del 80 %.</span>
+          <strong id="heroe-titulo">Tasa observada y predicción</strong>
+          <span id="heroe-sub">Efectiva anual, promedio del mes.</span>
         </figcaption>
         <div class="grafico" id="g-heroe"></div>
       </figure>
@@ -77,10 +81,15 @@
     <section id="simulador" class="seccion">
       <div class="encabezado">
         <h2>Simulador en tiempo real</h2>
-        <p>Mueve las condiciones y mira cómo cambia la proyección al instante. Cada línea fina es un futuro posible: la proyección más el error que el modelo cometió de verdad en un episodio del pasado.</p>
+        <p>Elige una predicción, mueve las condiciones y mira cómo cambia al instante. Cada línea fina es un futuro posible: la proyección más el error que el modelo cometió de verdad en un episodio del pasado.</p>
       </div>
       <div class="sim">
         <form class="tarjeta controles" id="controles" onsubmit="return false">
+          <fieldset>
+            <legend>Predicción</legend>
+            <div class="pred" data-pred role="group" aria-label="Tipo de predicción"></div>
+            <p class="ayuda" data-pred-resumen></p>
+          </fieldset>
           <fieldset>
             <legend>Qué simular</legend>
             <label for="s-modelo">Modelo</label>
@@ -151,7 +160,7 @@
     <section id="credito" class="seccion">
       <div class="encabezado">
         <h2>¿Qué significa para tu crédito?</h2>
-        <p>Compara la cuota de un crédito de libre inversión con la tasa de hoy y con la que el modelo proyecta para cuando pienses pedirlo.</p>
+        <p>Compara la cuota de un crédito de libre inversión con la tasa de hoy y con la predicción que elijas para cuando pienses pedirlo.</p>
       </div>
       <div class="credito">
         <form class="tarjeta controles" onsubmit="return false">
@@ -162,6 +171,8 @@
           <div class="marcas"><span>6 meses</span><span></span><span>7 años</span></div>
           <label for="c-cuando">¿Cuándo lo pedirías?</label>
           <select id="c-cuando"></select>
+          <span class="rotulo-campo" id="c-pred-titulo">Con la predicción</span>
+          <div class="pred" data-pred role="group" aria-labelledby="c-pred-titulo"></div>
           <p class="ayuda">La tasa promedio del mercado no es la que te ofrecerá tu banco: depende de tu perfil. Úsala como referencia de hacia dónde va el costo.</p>
         </form>
         <div class="credito-salida" id="c-salida"></div>
@@ -292,6 +303,7 @@
             <li>Es una proyección estadística: describe lo que suele pasar, no lo que va a pasar.</li>
             <li>No anticipa decisiones futuras del Banco de la República ni choques inesperados.</li>
             <li>El rango se ensancha con el plazo: a 12 meses la incertidumbre es alta.</li>
+            <li>La predicción optimista y la pesimista no son límites: la tasa puede salirse de ese rango.</li>
             <li>El control de condiciones cambia el punto de partida; no supone una senda futura.</li>
           </ul>
         </div>

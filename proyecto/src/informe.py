@@ -11,6 +11,7 @@ from src.config import (
     DERECHOS,
     HORIZONTES_REPORTE,
     NOMBRE_PROYECTO,
+    PREDICCIONES,
     NOMBRES_MODELO,
     PROYECCION_REFERENCIA,
     RMSE_REFERENCIA,
@@ -641,6 +642,31 @@ def escribir_informe(
         f"{coma(float(principal.loc[1, 'proyeccion']), 2)} %. Es un mes incompleto en "
         "los agregados y en el último viernes de tasas. No se usa para recalibrar ni "
         "para declarar que el modelo acertó o falló."
+    )
+    a("")
+    a("## Tres predicciones para elegir")
+    a("")
+    a(
+        "Para quien no quiere leer bandas, la página y la aplicación dejan elegir una "
+        "sola predicción entre tres. Todas salen de la misma proyección y están vistas "
+        "por quien pide el crédito, para quien una tasa más alta es la mala noticia."
+    )
+    a("")
+    for ficha in PREDICCIONES.values():
+        a(f"- **{ficha['nombre']}.** {ficha['resumen']} {ficha['detalle']}")
+    a("")
+    a("| Plazo | " + " | ".join(ficha["nombre"] for ficha in PREDICCIONES.values()) + " |")
+    a("| ---: | " + " | ".join("---:" for _ in PREDICCIONES) + " |")
+    for horizonte in HORIZONTES_REPORTE:
+        celdas = " | ".join(
+            f"{coma(float(principal.loc[horizonte, ficha['columna']]))} %" for ficha in PREDICCIONES.values()
+        )
+        a(f"| {horizonte} {'mes' if horizonte == 1 else 'meses'} | {celdas} |")
+    a("")
+    a(
+        "La optimista y la pesimista no son límites: en el backtest la tasa real se "
+        "salió de ese rango más veces de lo que el 80 % sugiere, sobre todo a 12 meses "
+        "o más. Sirven para ver un caso bueno y uno malo razonables, no el peor posible."
     )
     a("")
     a("## Cuánto aportan M1, M2 y M3")

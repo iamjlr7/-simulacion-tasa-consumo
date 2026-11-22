@@ -91,11 +91,23 @@ sin huecos, que la usura es 1,5 veces el interés corriente, que el combinado es
 el promedio de sus dos Ridge y que el cálculo que hace el navegador reproduce
 la proyección publicada.
 
+`tests/test_predicciones.py` comprueba que hay tres predicciones, que la
+optimista queda por debajo de la conservadora y esta por debajo de la
+pesimista, y que la cuenta del navegador reproduce las bandas publicadas.
+
+## Tres predicciones
+
+`PREDICCIONES`, en `src/config.py`, define las tres lecturas que se pueden
+elegir, vistas por quien pide el crédito: la optimista es el borde inferior de
+la banda del 80 %, la conservadora es la proyección central y la pesimista es
+el borde superior. `src.forecast.senda_prediccion` devuelve la senda de la que
+se elija. La página y la aplicación muestran una sola a la vez.
+
 ## Aplicación
 
-La aplicación, en español, permite recorrer la tasa y los agregados, elegir el
-modelo y el horizonte, ver las bandas del 80 % y del 95 % y descargar la senda
-en CSV. El aviso de la pantalla fija el alcance: es una proyección estadística,
+La aplicación, en español, permite recorrer la tasa y los agregados, elegir la
+predicción (optimista, conservadora o pesimista), el modelo y el horizonte, ver
+las bandas del 80 % y del 95 % y descargar la senda en CSV. El aviso de la pantalla fija el alcance: es una proyección estadística,
 no una recomendación.
 
 El escenario de la barra lateral cambia las condiciones de septiembre de 2026

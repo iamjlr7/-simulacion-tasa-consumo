@@ -21,11 +21,26 @@ python -m http.server 8765
 Luego abre <http://localhost:8765>. También funciona con doble clic sobre
 `sitio/index.html`. Sin conexión usa los datos guardados y lo indica.
 
+## Elegir la predicción
+
+La página y la aplicación dejan elegir una sola predicción entre tres y
+cambiarla cuando se quiera. Están vistas por quien pide el crédito:
+
+| Predicción | Qué supone | Cómo se calcula |
+| --- | --- | --- |
+| Optimista | La tasa termina en la parte baja de lo probable | Borde inferior del rango del 80 % |
+| Conservadora | Lo más probable con los datos de hoy | Proyección central del modelo |
+| Pesimista | La tasa termina en la parte alta de lo probable | Borde superior del rango del 80 % |
+
+El titular, el gráfico, el simulador y la calculadora de cuota usan la
+predicción elegida. La optimista y la pesimista no son límites: la tasa puede
+salirse de ese rango.
+
 ## Qué hay en la página
 
 | Sección | Qué responde |
 | --- | --- |
-| Resumen | Dónde está la tasa hoy y dónde la ve el modelo en 1, 3, 6 y 12 meses |
+| Resumen | Dónde está la tasa hoy y dónde queda en 1, 3, 6 y 12 meses según la predicción elegida |
 | Indicadores en tiempo real | Política, usura, libre inversión, TRM, Fed e inflación |
 | Simulador | Cómo cambia la proyección si cambian la política, el M2 o la inflación |
 | Tu crédito | Cuánto cambiaría la cuota de un crédito si esperas unos meses |
@@ -61,8 +76,9 @@ tasa real de política es la que más ayuda y entra en dos candidatos nuevos
 `docs/informe-modelado.md`.
 
 La simulación no inventa ruido: aplica a la proyección de hoy los errores que
-el modelo cometió de verdad en cada uno de los 150 meses en que se puso a
-prueba.
+el modelo cometió de verdad en cada uno de los 173 meses en que se puso a
+prueba. Los más recientes aún no completan 24 meses de resultado y solo
+aportan a los plazos que ya se pueden comparar.
 
 ## Reproducir el estudio
 

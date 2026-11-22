@@ -28,6 +28,8 @@ from src.config import (  # noqa: E402
     HORIZONTES_REPORTE,
     MEDIA,
     NOMBRES_MODELO,
+    PREDICCION_POR_DEFECTO,
+    PREDICCIONES,
     RMSE_REFERENCIA,
     coma,
 )
@@ -321,6 +323,7 @@ def grafico_proyeccion(
     inicio,
     nombre_modelo: str,
     escenario: dict[int, float] | None,
+    prediccion: str = PREDICCION_POR_DEFECTO,
 ) -> go.Figure:
     origen = panel.index.max()
     # Ocho años alcanzan para leer el abanico. Un inicio posterior del lateral se respeta.
@@ -358,9 +361,23 @@ def grafico_proyeccion(
         figura.add_trace(
             go.Scatter(x=historia.index, y=historia["y"], name="Tasa observada", line=dict(color="#0B3A5B", width=2.2))
         )
-    figura.add_trace(
-        go.Scatter(x=fechas, y=punto, name="Proyección", line=dict(color="#9C4A2B", width=2.2, dash="dash"))
-    )
+    ficha = PREDICCIONES[prediccion]
+    if prediccion == PREDICCION_POR_DEFECTO:
+        figura.add_trace(
+            go.Scatter(x=fechas, y=punto, name="Predicción conservadora", line=dict(color="#9C4A2B", width=3))
+        )
+    else:
+        figura.add_trace(
+            go.Scatter(x=fechas, y=punto, name="Conservadora (centro)", line=dict(color="#6B7280", width=1.6, dash="dot"))
+        )
+        figura.add_trace(
+            go.Scatter(
+                x=fechas,
+                y=[tasa, *senda[ficha["columna"]].tolist()],
+                name=f"Predicción {ficha['nombre'].lower()}",
+                line=dict(color="#9C4A2B", width=3),
+            )
+        )
     if escenario is not None:
         figura.add_trace(
             go.Scatter(
@@ -437,6 +454,7 @@ def seccion_proyeccion(
     horizonte: int,
     inicio,
     escenario: dict[int, float] | None,
+    prediccion: str = PREDICCION_POR_DEFECTO,
 ) -> None:
     st.subheader("Tu proyección desde septiembre de 2026")
     senda = proyeccion.loc[proyeccion["modelo"] == modelo_id].sort_values("horizonte")
@@ -449,8 +467,16 @@ def seccion_proyeccion(
         st.error("No hay pronóstico para ese horizonte.")
         return
     fila = fila.iloc[0]
+    ficha = PREDICCIONES[prediccion]
+    valor_elegido = float(fila[ficha["columna"]])
+    tasa_hoy = float(panel["y"].iloc[-1])
     columnas = st.columns(4)
-    columnas[0].metric("Proyección", f"{coma(float(fila['proyeccion']))} %")
+    columnas[0].metric(
+        f"Predicción {ficha['nombre'].lower()}",
+        f"{coma(valor_elegido)} %",
+        delta=f"{coma(valor_elegido - tasa_hoy)} pp frente a hoy",
+        delta_color="inverse",
+    )
     columnas[1].metric(
         "Banda 80 %",
         f"{coma(float(fila['banda_80_inferior']))} a {coma(float(fila['banda_80_superior']))}",
@@ -461,7 +487,12 @@ def seccion_proyeccion(
     )
     columnas[3].metric("RMSE de ese horizonte", f"{coma(float(fila['rmse_historico']), 3)} pp")
     st.plotly_chart(
-        grafico_proyeccion(panel, visible, inicio, NOMBRES_MODELO[modelo_id], escenario),
+        grafico_proyeccion(panel, visible, inicio, NOMBRES_MODELO[modelo_id], escenario, prediccion),
+    )
+    st.caption(
+        f"Predicción {ficha['nombre'].lower()} a {horizonte} {'mes' if horizonte == 1 else 'meses'}: "
+        f"{coma(valor_elegido)} %. {ficha['resumen']} {ficha['detalle']} "
+        "Puedes cambiarla en el lateral."
     )
     st.caption(
         "El gráfico muestra los últimos ocho años, o un tramo más corto si el rango del "
@@ -1054,6 +1085,17 @@ def main() -> None:
 
     with st.sidebar:
         st.header("Tus datos")
+        prediccion = st.radio(
+            "Predicción",
+            list(PREDICCIONES),
+            index=list(PREDICCIONES).index(PREDICCION_POR_DEFECTO),
+            format_func=lambda clave: PREDICCIONES[clave]["nombre"],
+            horizontal=True,
+            help=(
+                "Elige una sola predicción. Optimista: la tasa termina en la parte baja de lo "
+                "probable. Conservadora: lo más probable. Pesimista: la parte alta."
+            ),
+        )
         modelo_id = st.selectbox("Modelo", list(NOMBRES_MODELO), format_func=lambda clave: NOMBRES_MODELO[clave])
         modo = st.radio("Definir el horizonte", ["Meses", "Fecha final"], horizontal=True)
         if modo == "Meses":
@@ -1086,7 +1128,7 @@ def main() -> None:
         seccion_historial(panel, parcial, inicio, fin, con_politica, vista)
     elif seccion == "Proyección":
         escenario = controles_escenario(panel, modelo_id)
-        seccion_proyeccion(panel, datos["proyeccion"], modelo_id, horizonte, inicio, escenario)
+        seccion_proyeccion(panel, datos["proyeccion"], modelo_id, horizonte, inicio, escenario, prediccion)
     elif seccion == "Desempeño":
         seccion_desempeno(datos, modelo_id, horizonte)
     else:

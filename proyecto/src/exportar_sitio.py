@@ -43,6 +43,8 @@ from src.config import (
     LEMA_PROYECTO,
     NOMBRE_PROYECTO,
     NOMBRES_MODELO,
+    PREDICCION_POR_DEFECTO,
+    PREDICCIONES,
     PRIMERA_PREDICCION,
     RIDGE_LAMBDA,
     SITIO,
@@ -170,14 +172,20 @@ def _ridge(panel: pd.DataFrame) -> dict[str, Any]:
 
 
 def _errores(predicciones: pd.DataFrame) -> dict[str, Any]:
-    """Trayectorias completas de error (24 meses) por modelo y origen."""
+    """Trayectorias de error por modelo y origen, de 1 a 24 meses.
+
+    Entran todos los orígenes del backtest. Los más recientes todavía no
+    tienen 24 meses de resultado: sus horizontes pendientes van como ``null``.
+    Así los cuantiles que calcula la página en cada horizonte usan los mismos
+    errores que la banda publicada en ``proyeccion.csv``.
+    """
     salida: dict[str, Any] = {}
     for modelo, grupo in predicciones.groupby("modelo", sort=False):
         tabla = grupo.pivot(index="origen", columns="horizonte", values="error")
-        tabla = tabla.reindex(columns=range(1, HORIZONTE_MAX + 1)).dropna()
+        tabla = tabla.reindex(columns=range(1, HORIZONTE_MAX + 1)).sort_index()
         salida[str(modelo)] = {
             "origen": [pd.Timestamp(fecha).date().isoformat() for fecha in tabla.index],
-            "e": [[round(float(v), 3) for v in fila] for fila in tabla.to_numpy()],
+            "e": [[_num(v, 3) for v in fila] for fila in tabla.to_numpy()],
         }
     return salida
 
@@ -349,6 +357,11 @@ def construir_datos(directorio_procesado: Path | None = None) -> dict[str, Any]:
             "lambda": RIDGE_LAMBDA,
             "horizonte_max": HORIZONTE_MAX,
             "fechas_proyeccion": [f.date().isoformat() for f in primer["fecha"]],
+            "predicciones": [
+                {"id": clave, "nombre": ficha["nombre"], "resumen": ficha["resumen"], "detalle": ficha["detalle"]}
+                for clave, ficha in PREDICCIONES.items()
+            ],
+            "prediccion_por_defecto": PREDICCION_POR_DEFECTO,
         },
         "nombres": {m: NOMBRES_MODELO[m] for m in modelos},
         "etiquetas": dict(ETIQUETA_FEATURE),

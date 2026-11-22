@@ -325,6 +325,72 @@
   const rmse = (modelo, h) => (D.metricas[modelo] ? D.metricas[modelo].rmse[h - 1] : null);
 
   /* ------------------------------------------------------------------ */
+  /* Tres predicciones: optimista, conservadora y pesimista              */
+  /* ------------------------------------------------------------------ */
+
+  // Están vistas por quien pide el crédito: la tasa baja es la buena noticia.
+  // La conservadora es la proyección central. La optimista y la pesimista le
+  // suman el percentil 10 o 90 de los errores del backtest, es decir, los
+  // bordes del rango del 80 % que publica el estudio.
+  const PREDICCIONES = D.meta.predicciones || [
+    { id: "optimista", nombre: "Optimista", resumen: "La tasa termina en la parte baja de lo probable.", detalle: "Borde inferior del rango del 80 %." },
+    { id: "conservadora", nombre: "Conservadora", resumen: "Lo más probable según los datos de hoy.", detalle: "Proyección central del modelo." },
+    { id: "pesimista", nombre: "Pesimista", resumen: "La tasa termina en la parte alta de lo probable.", detalle: "Borde superior del rango del 80 %." },
+  ];
+  const CUANTIL_PREDICCION = { optimista: 0.1, pesimista: 0.9 };
+  const ICONO_PREDICCION = { optimista: "▼", conservadora: "●", pesimista: "▲" };
+  let TIPO = D.meta.prediccion_por_defecto || "conservadora";
+  try {
+    const guardada = localStorage.getItem("tasaviva-prediccion");
+    if (PREDICCIONES.some((p) => p.id === guardada)) TIPO = guardada;
+  } catch (error) { /* sin almacenamiento */ }
+  const prediccion = (id = TIPO) => PREDICCIONES.find((p) => p.id === id);
+
+  const cacheMargen = {};
+  function margenError(modelo, q) {
+    const clave = `${modelo}|${q}`;
+    if (!cacheMargen[clave]) {
+      const filas = (D.errores[modelo] || { e: [] }).e;
+      cacheMargen[clave] = Array.from({ length: HMAX }, (_, i) => {
+        const errores = filas.map((fila) => fila[i]).filter((v) => v !== null).sort((a, b) => a - b);
+        return errores.length ? cuantil(errores, q) : 0;
+      });
+    }
+    return cacheMargen[clave];
+  }
+
+  function sendaPrediccion(modelo, tipo = TIPO, condiciones = ESCENARIO_BASE) {
+    const central = sendaCentral(modelo, condiciones);
+    const q = CUANTIL_PREDICCION[tipo];
+    if (q === undefined) return central;
+    const margen = margenError(modelo, q);
+    return central.map((v, i) => v + margen[i]);
+  }
+
+  function pintarSelectores() {
+    const elegida = prediccion();
+    $$("[data-pred]").forEach((caja) => {
+      if (!caja.children.length) {
+        caja.innerHTML = PREDICCIONES.map((p) =>
+          `<button type="button" class="pred-${p.id}" data-tipo="${p.id}" title="${esc(p.resumen)}"><i aria-hidden="true">${ICONO_PREDICCION[p.id] || ""}</i>${esc(p.nombre)}</button>`).join("");
+      }
+      $$("[data-tipo]", caja).forEach((boton) => boton.setAttribute("aria-pressed", String(boton.dataset.tipo === TIPO)));
+    });
+    $$("[data-pred-resumen]").forEach((nota) => { nota.textContent = `${elegida.resumen} Da una sola cifra; puedes cambiarla cuando quieras.`; });
+  }
+
+  function elegirPrediccion(tipo) {
+    if (!prediccion(tipo) || tipo === TIPO) return;
+    TIPO = tipo;
+    try { localStorage.setItem("tasaviva-prediccion", TIPO); } catch (error) { /* sin almacenamiento */ }
+    pintarSelectores();
+    pintarTitular();
+    pintarHeroe();
+    pintarSimEstatico();
+    pintarCredito();
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Datos en vivo                                                       */
   /* ------------------------------------------------------------------ */
 
@@ -466,26 +532,30 @@
   };
 
   function pintarTitular() {
-    const senda = D.proyeccion[PRINCIPAL];
-    const doce = senda.central[11];
+    const elegida = prediccion();
+    const senda = sendaPrediccion(PRINCIPAL);
+    const doce = senda[11];
     const cambio = doce - Y0;
     const verbo = cambio > 0.05 ? "subiría a" : cambio < -0.05 ? "bajaría a" : "seguiría cerca de";
-    $("#titular").innerHTML = `La tasa está en <em>${pct(Y0)}</em> y ${verbo} <em>${pct(doce)}</em> en un año`;
-    $("#bajada").textContent =
+    $("#titular").innerHTML = `La tasa está en <em>${pct(Y0)}</em> y en un año ${verbo} <em>${pct(doce)}</em>`;
+    $("#bajada").innerHTML =
       `Es la tasa promedio que cobran las entidades por un crédito de consumo, efectiva anual, a ${mesAnio(ORIGEN)}. ` +
-      `Para ${mesAnio(FECHAS[11])} el rango más probable va de ${pct(senda.b80i[11], 1)} a ${pct(senda.b80s[11], 1)}, según lo que el modelo se ha equivocado en el pasado.`;
+      `<b>Predicción ${esc(elegida.nombre.toLowerCase())} para ${mesAnio(FECHAS[11])}:</b> ${esc(elegida.resumen)} ${esc(elegida.detalle)}`;
     $("#pasos").innerHTML = [1, 3, 6, 12].map((h) => {
-      const v = senda.central[h - 1];
+      const v = senda[h - 1];
       const d = v - Y0;
       return `<div class="paso"><span>En ${h} ${h === 1 ? "mes" : "meses"}</span><strong>${pct(v)}</strong><small class="${clase(d)}">${flecha(d)} ${pp(d)}</small></div>`;
     }).join("");
     if (D.parcial && D.parcial.tasa) {
-      const previsto = senda.central[0];
-      const dentro = D.parcial.tasa >= senda.b80i[0] && D.parcial.tasa <= senda.b80s[0];
+      const previsto = sendaPrediccion(PRINCIPAL, "conservadora")[0];
+      const baja = sendaPrediccion(PRINCIPAL, "optimista")[0];
+      const alta = sendaPrediccion(PRINCIPAL, "pesimista")[0];
+      const dentro = D.parcial.tasa >= baja && D.parcial.tasa <= alta;
       $("#seguimiento").innerHTML =
-        `<b>Seguimiento:</b> para ${mesAnio(FECHAS[0])} el modelo proyectó ${pct(previsto)}. ` +
-        `Con ${D.parcial.n} semanas publicadas el promedio va en ${pct(D.parcial.tasa)} ` +
-        `(${pp(D.parcial.tasa - previsto)}), ${dentro ? "dentro" : "fuera"} del rango previsto.`;
+        `<b>Seguimiento:</b> para ${mesAnio(FECHAS[0])} la predicción conservadora fue ${pct(previsto)} ` +
+        `(optimista ${pct(baja)}, pesimista ${pct(alta)}). ` +
+        `Con ${D.parcial.n} semanas publicadas el promedio va en ${pct(D.parcial.tasa)}, ` +
+        `${dentro ? "dentro" : "fuera"} de ese rango.`;
     }
     $("#pie-datos").textContent =
       `Modelo estimado con ${D.meta.meses} meses, de ${mesAnio(D.meta.inicio)} a ${mesAnio(ORIGEN)}. ` +
@@ -495,28 +565,30 @@
   function pintarHeroe() {
     const desde = N - 61;
     const historia = P.fecha.slice(desde).map((f, i) => [ms(f), P.y[desde + i]]);
-    const senda = D.proyeccion[PRINCIPAL];
+    const elegida = prediccion();
+    const nombre = `Predicción ${elegida.nombre.toLowerCase()}`;
+    const senda = sendaPrediccion(PRINCIPAL);
     const t0 = ms(ORIGEN);
-    const central = [[t0, Y0], ...FECHAS.map((f, i) => [ms(f), senda.central[i]])];
-    const banda = [[t0, Y0, Y0], ...FECHAS.map((f, i) => [ms(f), senda.b80i[i], senda.b80s[i]])];
+    const linea = [[t0, Y0], ...FECHAS.map((f, i) => [ms(f), senda[i]])];
+    // El eje no cambia al pasar de una predicción a otra: así se ve que la
+    // línea sube o baja, no que el gráfico se reacomoda.
+    const extremos = [...historia.map((p) => p[1]), ...sendaPrediccion(PRINCIPAL, "optimista"), ...sendaPrediccion(PRINCIPAL, "pesimista")];
     grafico($("#g-heroe"), {
-      titulo: "Tasa de consumo observada y proyectada",
+      titulo: `Tasa de consumo observada y ${nombre.toLowerCase()}`,
       alto: 290,
-      margenDer: 54,
+      margenDer: 16,
+      yMin: Math.min(...extremos),
+      yMax: Math.max(...extremos),
       series: [
         { nombre: "Observada", color: "var(--s1)", p: historia, ancho: 2.2 },
-        { nombre: "Proyección", color: "var(--s1)", p: central, guion: "5 4", puntoFinal: true },
+        { nombre, color: "var(--s1)", p: linea, guion: "5 4", ancho: 2.4 },
       ],
-      bandas: [{ p: banda, color: "var(--s1)", op: 0.14 }],
+      marcas: [{ t: ms(FECHAS[11]), v: senda[11], color: "var(--s1)" }],
       lineasV: [{ t: t0, texto: "Hoy", ancla: "end" }],
-      etiquetas: [
-        { t: ms(FECHAS[HMAX - 1]), v: senda.central[HMAX - 1], texto: pct(senda.central[HMAX - 1], 1), dx: 8, dy: 4, ancla: "start" },
-      ],
-      tipExtra: (t) => {
-        const i = FECHAS.findIndex((f) => ms(f) === t);
-        return i >= 0 ? `<div><span>Rango del 80 %</span><em>${num(senda.b80i[i], 1)} – ${num(senda.b80s[i], 1)} %</em></div>` : "";
-      },
+      etiquetas: [{ t: ms(FECHAS[11]), v: senda[11], texto: pct(senda[11], 1), dy: -12 }],
     });
+    $("#heroe-titulo").textContent = `Tasa observada y ${nombre.toLowerCase()}`;
+    $("#heroe-sub").textContent = `Efectiva anual, promedio del mes. La línea punteada es una sola predicción: la ${elegida.nombre.toLowerCase()}.`;
   }
 
   function ficha({ nombre, valor, detalle, estado, etiqueta }) {
@@ -602,6 +674,7 @@
     acumulado: 0,
     previo: 0,
     central: [],
+    pred: [],
     base: [],
     lienzo: null,
     umbral: Math.ceil(Y0) + 2,
@@ -693,27 +766,31 @@
 
   function pintarSimEstatico() {
     const contenedor = $("#g-sim");
-    SIM.central = sendaCentral(SIM.modelo, admiteEscenario(SIM.modelo) ? SIM.escenario : ESCENARIO_BASE);
-    SIM.base = sendaCentral(SIM.modelo, ESCENARIO_BASE);
+    const condiciones = admiteEscenario(SIM.modelo) ? SIM.escenario : ESCENARIO_BASE;
+    SIM.central = sendaCentral(SIM.modelo, condiciones);
+    SIM.pred = sendaPrediccion(SIM.modelo, TIPO, condiciones);
+    SIM.base = sendaPrediccion(SIM.modelo, TIPO, ESCENARIO_BASE);
+    const nombrePred = `Predicción ${prediccion().nombre.toLowerCase()}`;
     const conEscenario = escenarioActivo();
     const desde = N - 37;
     const t0 = ms(ORIGEN);
     const historia = P.fecha.slice(desde).map((f, i) => [ms(f), P.y[desde + i]]);
-    const central = [[t0, Y0], ...FECHAS.map((f, i) => [ms(f), SIM.central[i]])];
+    const linea = [[t0, Y0], ...FECHAS.map((f, i) => [ms(f), SIM.pred[i]])];
     const todos = episodios().e;
     let minimo = Math.min(...historia.map((p) => p[1]));
     let maximo = Math.max(...historia.map((p) => p[1]));
     todos.forEach((fila) => fila.forEach((error, i) => {
+      if (error === null) return;
       const v = SIM.central[i] + error;
       if (v < minimo) minimo = v;
       if (v > maximo) maximo = v;
     }));
     const series = [
       { nombre: "Observada", color: "var(--s1)", p: historia, ancho: 2.2 },
-      { nombre: conEscenario ? "Proyección con tu escenario" : "Proyección", color: "var(--s1)", p: central, ancho: 2.6, puntoFinal: true },
+      { nombre: conEscenario ? `${nombrePred} con tus cambios` : nombrePred, color: "var(--s1)", p: linea, ancho: 2.6, puntoFinal: true },
     ];
     if (conEscenario) {
-      series.push({ nombre: "Proyección sin cambios", color: "var(--neutro)", p: [[t0, Y0], ...FECHAS.map((f, i) => [ms(f), SIM.base[i]])], guion: "4 4", ancho: 1.6 });
+      series.push({ nombre: `${nombrePred} sin cambios`, color: "var(--neutro)", p: [[t0, Y0], ...FECHAS.map((f, i) => [ms(f), SIM.base[i]])], guion: "4 4", ancho: 1.6 });
     }
     const marcas = [];
     if (D.parcial && D.parcial.tasa) marcas.push({ t: ms(FECHAS[0]), v: D.parcial.tasa, color: "var(--s3)" });
@@ -739,9 +816,9 @@
     });
     const items = [
       { nombre: "Observada", color: "var(--s1)" },
-      { nombre: conEscenario ? "Proyección con tu escenario" : "Proyección", color: "var(--s1)" },
+      { nombre: conEscenario ? `${nombrePred} con tus cambios` : nombrePred, color: "var(--s1)" },
     ];
-    if (conEscenario) items.push({ nombre: "Proyección sin cambios", color: "var(--neutro)", tipo: "guion" });
+    if (conEscenario) items.push({ nombre: `${nombrePred} sin cambios`, color: "var(--neutro)", tipo: "guion" });
     items.push(
       { nombre: "Futuros posibles", color: "var(--neutro)", tipo: "fino" },
       { nombre: "Rango del 80 % y del 95 %", color: "var(--s1)", tipo: "banda" },
@@ -756,13 +833,18 @@
   function valoresEn(i) {
     const todos = episodios().e;
     const valores = [];
-    for (let k = 0; k < SIM.jugados; k += 1) valores.push(SIM.central[i] + todos[SIM.orden[k]][i]);
+    for (let k = 0; k < SIM.jugados; k += 1) {
+      // Los episodios más recientes aún no tienen resultado a plazos largos.
+      const error = todos[SIM.orden[k]][i];
+      if (error !== null) valores.push(SIM.central[i] + error);
+    }
     return valores;
   }
 
   function bandaEn(i) {
     if (SIM.jugados < 8) return null;
     const ordenados = valoresEn(i).sort((a, b) => a - b);
+    if (ordenados.length < 8) return null;
     return { q025: cuantil(ordenados, 0.025), q10: cuantil(ordenados, 0.1), q90: cuantil(ordenados, 0.9), q975: cuantil(ordenados, 0.975) };
   }
 
@@ -779,18 +861,21 @@
       const b80 = [[t0, Y0, Y0]];
       for (let i = 0; i < HMAX; i += 1) {
         const b = bandaEn(i);
+        if (!b) break;
         b95.push([tiempos[i], b.q025, b.q975]);
         b80.push([tiempos[i], b.q10, b.q90]);
       }
-      svg += `<polygon points="${poligono(b95, sx, sy)}" fill="var(--s1)" fill-opacity="0.09"/>`;
-      svg += `<polygon points="${poligono(b80, sx, sy)}" fill="var(--s1)" fill-opacity="0.13"/>`;
+      if (b80.length > 1) {
+        svg += `<polygon points="${poligono(b95, sx, sy)}" fill="var(--s1)" fill-opacity="0.09"/>`;
+        svg += `<polygon points="${poligono(b80, sx, sy)}" fill="var(--s1)" fill-opacity="0.13"/>`;
+      }
     }
     const x0 = sx(t0).toFixed(1);
     const yInicio = sy(Y0).toFixed(1);
     for (let k = 0; k < SIM.jugados; k += 1) {
       const fila = todos.e[SIM.orden[k]];
       let d = `M${x0},${yInicio}`;
-      for (let i = 0; i < HMAX; i += 1) d += `L${sx(tiempos[i]).toFixed(1)},${sy(SIM.central[i] + fila[i]).toFixed(1)}`;
+      for (let i = 0; i < HMAX && fila[i] !== null; i += 1) d += `L${sx(tiempos[i]).toFixed(1)},${sy(SIM.central[i] + fila[i]).toFixed(1)}`;
       const ultimo = k === SIM.jugados - 1 && SIM.jugados < SIM.orden.length;
       svg += ultimo
         ? `<path d="${d}" fill="none" stroke="var(--s2)" stroke-width="1.8" stroke-linejoin="round"/>`
@@ -805,25 +890,26 @@
       const origen = todos.origen[SIM.orden[SIM.jugados - 1]];
       $("#sim-episodio").innerHTML = `Línea naranja: la proyección de hoy con el error que el modelo tuvo al pronosticar desde <b>${mesAnio(origen)}</b>.`;
     } else if (total) {
-      $("#sim-episodio").textContent = `Listo: ${total} futuros posibles, uno por cada mes entre ${mesAnio(todos.origen[0])} y ${mesAnio(todos.origen[total - 1])} en que se puso a prueba el modelo.`;
+      $("#sim-episodio").textContent = `Listo: ${total} episodios, uno por cada mes entre ${mesAnio(todos.origen[0])} y ${mesAnio(todos.origen[total - 1])} en que se puso a prueba el modelo. Las líneas cortas son los meses más recientes, que aún no completan 24 meses de resultado.`;
     }
     pintarResultados();
   }
 
   function pintarResultados() {
     const i = SIM.h - 1;
-    const central = SIM.central[i];
+    const elegida = prediccion();
+    const valor = SIM.pred[i];
     const valores = valoresEn(i);
     const ordenados = valores.slice().sort((a, b) => a - b);
     const hay = valores.length >= 8;
     const suben = valores.filter((v) => v > Y0).length;
     const sobre = valores.filter((v) => v > SIM.umbral).length;
-    const cambio = central - Y0;
+    const cambio = valor - Y0;
     const error = rmse(SIM.modelo, SIM.h);
     const errorPaseo = rmse("paseo_aleatorio", SIM.h);
     const fecha = mesAnio(FECHAS[i]);
     $("#sim-resultados").innerHTML = `
-      <div class="dato"><span>Tasa esperada en ${fecha}</span><strong>${pct(central)}</strong>
+      <div class="dato elegida"><span>Predicción ${esc(elegida.nombre.toLowerCase())} en ${fecha}</span><strong>${pct(valor)}</strong>
         <small><b class="${clase(cambio)}">${flecha(cambio)} ${pp(cambio)}</b> frente a hoy (${pct(Y0)})</small></div>
       <div class="dato"><span>Rango probable (80 %)</span><strong>${hay ? `${num(cuantil(ordenados, 0.1), 1)} – ${num(cuantil(ordenados, 0.9), 1)} %` : "…"}</strong>
         <small>8 de cada 10 futuros simulados terminan aquí</small></div>
@@ -834,10 +920,10 @@
     $("#hist-titulo").textContent = `Dónde termina la tasa en ${fecha}`;
     $("#hist-sub").textContent = `Cada barra cuenta cuántos de los ${valores.length} futuros simulados caen en ese tramo. En naranja, los que superan ${pct(SIM.umbral, 2)}.`;
     $("#s-umbral-val").textContent = valores.length ? `= ${num((sobre / valores.length) * 100, 0)} %` : "";
-    histograma($("#g-hist"), valores, central);
+    histograma($("#g-hist"), valores, valor, elegida.nombre);
   }
 
-  function histograma(contenedor, valores, central) {
+  function histograma(contenedor, valores, marca, nombreMarca) {
     const W = Math.max(280, Math.floor(contenedor.clientWidth));
     const H = 210;
     const m = { l: 34, r: 14, t: 22, b: 26 };
@@ -846,6 +932,7 @@
     let minimo = Y0;
     let maximo = Y0;
     todos.forEach((fila) => {
+      if (fila[i] === null) return;
       const v = SIM.central[i] + fila[i];
       if (v < minimo) minimo = v;
       if (v > maximo) maximo = v;
@@ -888,8 +975,8 @@
       const x = sx(v);
       return `<line x1="${x}" x2="${x}" y1="${m.t - 6}" y2="${H - m.b}" stroke="var(--tinta-2)" stroke-width="1.2"/><text class="rotulo" x="${x + (ancla === "end" ? -5 : 5)}" y="${m.t - 9}" text-anchor="${ancla}">${texto}</text>`;
     };
-    svg += raya(Y0, `Hoy ${num(Y0, 1)}`, central >= Y0 ? "end" : "start");
-    svg += raya(central, `Esperada ${num(central, 1)}`, central >= Y0 ? "start" : "end");
+    svg += raya(Y0, `Hoy ${num(Y0, 1)}`, marca >= Y0 ? "end" : "start");
+    svg += raya(marca, `${nombreMarca} ${num(marca, 1)}`, marca >= Y0 ? "start" : "end");
     svg += "</svg>";
     contenedor.innerHTML = svg;
   }
@@ -959,10 +1046,12 @@
     const h = Number($("#c-cuando").value);
     const anios = plazo / 12;
     $("#c-plazo-val").textContent = `${plazo} meses${plazo % 12 === 0 ? ` (${anios} ${anios === 1 ? "año" : "años"})` : ""}`;
-    const senda = D.proyeccion[PRINCIPAL];
-    const futura = senda.central[h - 1];
-    const baja = senda.b80i[h - 1];
-    const alta = senda.b80s[h - 1];
+    const elegida = prediccion();
+    const nombrePred = `predicción ${elegida.nombre.toLowerCase()}`;
+    const futura = sendaPrediccion(PRINCIPAL)[h - 1];
+    const otras = PREDICCIONES.filter((p) => p.id !== TIPO)
+      .map((p) => `<dt>Cuota con la ${esc(p.nombre.toLowerCase())}</dt><dd>${pesos(cuotaMensual(monto, sendaPrediccion(PRINCIPAL, p.id)[h - 1], plazo))}</dd>`)
+      .join("");
     const cuotaHoy = cuotaMensual(monto, Y0, plazo);
     const cuotaFutura = cuotaMensual(monto, futura, plazo);
     const diferencia = cuotaFutura - cuotaHoy;
@@ -981,15 +1070,14 @@
     $("#c-salida").innerHTML = !monto ? '<div class="tarjeta">Escribe un monto para calcular la cuota.</div>' : `
       <div class="cuotas">
         ${tarjeta(`Si lo pides hoy`, Y0, cuotaHoy, "", false)}
-        ${tarjeta(`Si lo pides en ${mesAnio(FECHAS[h - 1])}`, futura, cuotaFutura,
-          `<dt>Cuota en el rango del 80 %</dt><dd>${pesos(cuotaMensual(monto, baja, plazo))} – ${pesos(cuotaMensual(monto, alta, plazo))}</dd>`, true)}
+        ${tarjeta(`Si lo pides en ${mesAnio(FECHAS[h - 1])} · ${esc(nombrePred)}`, futura, cuotaFutura, otras, true)}
       </div>
       <div class="tarjeta veredicto">
         ${Math.abs(diferencia) < 1
-          ? "Con la proyección actual, la cuota sería prácticamente la misma."
-          : `Según la proyección, esperar ${h} ${h === 1 ? "mes" : "meses"} ${diferencia > 0 ? "encarecería" : "abarataría"} la cuota en unos
+          ? `Con la ${esc(nombrePred)}, la cuota sería prácticamente la misma.`
+          : `Según la ${esc(nombrePred)}, esperar ${h} ${h === 1 ? "mes" : "meses"} ${diferencia > 0 ? "encarecería" : "abarataría"} la cuota en unos
              <b class="${clase(diferencia)}">${pesos(Math.abs(diferencia))} al mes</b>
-             (${pesos(Math.abs(diferencia) * plazo)} en todo el crédito). Es una estimación con incertidumbre: mira el rango.`}
+             (${pesos(Math.abs(diferencia) * plazo)} en todo el crédito). Es una estimación: cambia de predicción para ver los otros dos casos.`}
       </div>
       ${usura ? `<div class="tarjeta tope"><span><b>Tope legal vigente: ${pct(usura)} efectiva anual.</b>
         Ninguna entidad puede cobrarte más que la tasa de usura en un crédito de consumo. A esa tasa, la cuota de este crédito sería ${pesos(cuotaMensual(monto, usura, plazo))} al mes.</span></div>` : ""}`;
@@ -1272,6 +1360,10 @@
       raiz.dataset.theme = oscuro ? "light" : "dark";
       try { localStorage.setItem("tasaviva-tema", raiz.dataset.theme); } catch (error) { /* sin almacenamiento */ }
     });
+    document.addEventListener("click", (evento) => {
+      const boton = evento.target.closest ? evento.target.closest("[data-pred] [data-tipo]") : null;
+      if (boton) elegirPrediccion(boton.dataset.tipo);
+    });
     const enlaces = $$(".nav a");
     const observador = new IntersectionObserver((entradas) => {
       entradas.forEach((entrada) => {
@@ -1294,6 +1386,7 @@
 
   function arrancar() {
     conectarInterfaz();
+    pintarSelectores();
     pintarTitular();
     pintarFichas();
     llenarControles();
