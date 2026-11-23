@@ -1,0 +1,9 @@
+{
+  "name": "tasaviva-sitio",
+  "private": true,
+  "type": "module",
+  "description": "Aplicación web de TasaViva. Sin dependencias: este archivo solo sirve para correr las pruebas.",
+  "scripts": {
+    "test": "node --test pruebas/"
+  }
+}

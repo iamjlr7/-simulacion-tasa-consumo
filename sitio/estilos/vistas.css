@@ -1,0 +1,110 @@
+/* Lo propio de cada vista. */
+
+/* ---------- Resumen ---------- */
+
+.heroe {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 2rem; align-items: center;
+  padding: 1.8rem;
+  background:
+    radial-gradient(900px 380px at 0% 0%, var(--halo), transparent 62%),
+    var(--superficie);
+}
+
+.sobre { font-size: .76rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--marca-2); }
+
+.titular { font-size: clamp(1.7rem, 2.6vw, 2.5rem); line-height: 1.12; letter-spacing: -.035em; font-weight: 760; margin: .55rem 0 .8rem; text-wrap: balance; }
+.titular em { font-style: normal; color: var(--marca-2); }
+
+.bajada { color: var(--tinta-2); font-size: 1rem; max-width: 58ch; }
+.bajada b { color: var(--tinta); }
+
+.pasos { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .6rem; margin: 1.3rem 0 1rem; }
+.paso { background: var(--superficie); border: 1px solid var(--borde); border-radius: 12px; padding: .65rem .75rem; }
+.paso span { display: block; font-size: .74rem; color: var(--tinta-3); font-weight: 620; }
+.paso strong { display: block; font: 720 1.22rem/1.3 var(--fuente-titulos); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.paso small { font-size: .76rem; font-weight: 650; }
+
+.seguimiento { font-size: .86rem; color: var(--tinta-2); border-left: 3px solid var(--s1); padding: .15rem 0 .15rem .75rem; margin-bottom: 1.2rem; border-radius: 0; }
+.seguimiento:empty { display: none; }
+
+.acciones { display: flex; gap: .6rem; flex-wrap: wrap; }
+
+.heroe-grafico { min-width: 0; }
+.heroe-grafico figcaption { margin-bottom: .5rem; }
+
+.accesos { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.acceso { display: grid; gap: .25rem; text-decoration: none; color: var(--tinta); transition: border-color .15s, transform .15s; }
+.acceso:hover { border-color: var(--marca-2); transform: translateY(-2px); }
+.acceso .icono-svg { color: var(--marca-2); margin-bottom: .2rem; }
+.acceso strong { font-size: 1rem; font-weight: 680; }
+.acceso span { font-size: .86rem; color: var(--tinta-2); }
+
+/* ---------- Simulador y crédito ---------- */
+
+.sim, .credito { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+.sim-principal, .credito-salida { display: grid; gap: 1.25rem; min-width: 0; }
+.sim .controles { position: sticky; top: 92px; }
+
+.progreso { text-align: right; font-size: .8rem; color: var(--tinta-2); min-width: 170px; font-variant-numeric: tabular-nums; }
+.progreso-barra { height: 4px; background: var(--superficie-2); border-radius: 4px; margin-top: .3rem; overflow: hidden; }
+.progreso-barra i { display: block; height: 100%; width: 0; background: var(--s1); border-radius: 4px; transition: width .15s linear; }
+
+.umbral { font-size: .84rem; color: var(--tinta-2); display: inline-flex; align-items: center; gap: .4rem; }
+.umbral input { width: 78px; padding: .3rem .45rem; }
+.umbral b { color: var(--tinta); font-size: 1rem; font-variant-numeric: tabular-nums; }
+
+.cuotas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
+.cuota h3 { font-size: .86rem; font-weight: 620; color: var(--tinta-2); font-family: var(--fuente); }
+.cuota .grande { font: 760 2.1rem/1.2 var(--fuente-titulos); letter-spacing: -.035em; font-variant-numeric: tabular-nums; margin: .2rem 0 .1rem; }
+.cuota .grande small { font-size: .9rem; font-weight: 500; color: var(--tinta-3); letter-spacing: 0; }
+.cuota dl { display: grid; grid-template-columns: 1fr auto; gap: .3rem 1rem; margin-top: .8rem; font-size: .86rem; }
+.cuota dt { color: var(--tinta-2); }
+.cuota dd { margin: 0; font-weight: 620; font-variant-numeric: tabular-nums; text-align: right; }
+.cuota.destacada { border-color: color-mix(in srgb, var(--s1) 55%, var(--borde)); background: linear-gradient(180deg, var(--halo), transparent 60%), var(--superficie); }
+.veredicto { font-size: .95rem; }
+.veredicto b { font-variant-numeric: tabular-nums; }
+.tope { font-size: .86rem; color: var(--tinta-2); }
+.tope b { color: var(--tinta); }
+
+/* ---------- Método ---------- */
+
+.pasos-metodo { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.25rem; }
+.pasos-metodo b { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--acento-suave); color: var(--marca-2); font-size: .95rem; }
+.pasos-metodo h3 { font-size: 1rem; margin: .65rem 0 .25rem; }
+.pasos-metodo p { font-size: .88rem; color: var(--tinta-2); }
+
+.lista { padding-left: 1.1rem; font-size: .88rem; color: var(--tinta-2); display: grid; gap: .35rem; }
+
+.capas { list-style: none; padding: 0; display: grid; gap: .4rem; }
+.capas li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .55rem .75rem; border: 1px solid var(--borde); border-radius: 10px; background: var(--superficie-2); }
+.capas span { display: inline-flex; align-items: center; gap: .5rem; color: var(--marca-2); }
+.capas b { color: var(--tinta); font-size: .9rem; }
+.capas small { font-size: .8rem; color: var(--tinta-2); text-align: right; }
+
+#g-coef .barra-fila { grid-template-columns: minmax(150px, 46%) minmax(0, 1fr) 52px; }
+#g-coef .nombre { white-space: normal; line-height: 1.25; }
+#t-fuentes td:first-child { min-width: 200px; }
+#t-fuentes td { white-space: normal; }
+
+/* ---------- Adaptación ---------- */
+
+@media (max-width: 1100px) {
+  .heroe { grid-template-columns: 1fr; }
+  .pasos-metodo { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 860px) {
+  .sim, .credito { grid-template-columns: 1fr; }
+  .sim .controles { position: static; }
+  .accesos { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .heroe { padding: 1.1rem; }
+  .pasos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cuotas { grid-template-columns: 1fr; }
+  .cuota .grande { font-size: 1.6rem; }
+  .pasos-metodo { grid-template-columns: 1fr; }
+  .capas li { flex-direction: column; align-items: flex-start; gap: .2rem; }
+  .capas small { text-align: left; }
+}

@@ -11,15 +11,21 @@ financiera ni una tasa oficial.
 
 ## Abrir la página
 
-La página es estática y no necesita instalar nada:
+La página no necesita instalar nada, solo Python para servir los archivos.
+
+En Windows, haz doble clic en `abrir.bat`. En cualquier sistema:
 
 ```bash
 cd sitio
 python -m http.server 8765
 ```
 
-Luego abre <http://localhost:8765>. También funciona con doble clic sobre
-`sitio/index.html`. Sin conexión usa los datos guardados y lo indica.
+Luego abre <http://localhost:8765>. La página usa módulos de JavaScript, que el
+navegador no carga con doble clic sobre `index.html`: hay que entrar por el
+servidor local.
+
+Después de la primera visita funciona sin conexión, con los últimos datos
+guardados, y el navegador ofrece instalarla como aplicación.
 
 ## Elegir la predicción
 
@@ -38,8 +44,8 @@ salirse de ese rango.
 
 ## Descargar la consulta en Excel
 
-El botón «Descargar Excel» (en el resumen, el simulador y la calculadora)
-guarda un archivo `.xlsx` con lo que haya en pantalla en ese momento:
+El botón «Descargar Excel», en la barra superior, guarda un archivo `.xlsx`
+con lo que se haya elegido hasta ese momento:
 
 | Hoja | Contenido |
 | --- | --- |
@@ -49,21 +55,79 @@ guarda un archivo `.xlsx` con lo que haya en pantalla en ese momento:
 | Indicadores | Los indicadores del momento, con su fecha, su fuente y si venían en vivo |
 
 Los números van como números y las fechas como fechas, para que se puedan
-sumar o graficar. El archivo se genera en el navegador con `sitio/excel.js`,
-sin librerías y sin enviar nada a ningún servidor.
+sumar o graficar. El archivo se genera en el navegador con
+`sitio/js/servicios/excel.js`, sin librerías y sin enviar nada a ningún servidor.
 
 ## Qué hay en la página
 
-| Sección | Qué responde |
+Un menú lateral lleva a siete vistas. La predicción elegida, en la barra
+superior, vale para todas.
+
+| Vista | Qué responde |
 | --- | --- |
-| Resumen | Dónde está la tasa hoy y dónde queda en 1, 3, 6 y 12 meses según la predicción elegida |
-| Indicadores en tiempo real | Política, usura, libre inversión, TRM, Fed e inflación |
+| Resumen | Dónde está la tasa hoy, dónde queda en 1, 3, 6 y 12 meses, y los indicadores en tiempo real |
 | Simulador | Cómo cambia la proyección si cambian la política, el M2 o la inflación |
 | Tu crédito | Cuánto cambiaría la cuota de un crédito si esperas unos meses |
 | Mercado en vivo | Qué tasa cobró cada entidad en la semana más reciente |
 | Historia | Veinticuatro años de la tasa y de lo que la mueve |
 | Confiabilidad | Cuánto se equivoca el modelo y si los datos nuevos ayudan |
-| Método | Los cuatro pasos del modelo, las fuentes y sus límites |
+| Método | Los cuatro pasos del modelo, las fuentes, sus límites y cómo está construida la aplicación |
+
+## Arquitectura de la página
+
+La página es una aplicación de una sola página hecha con módulos de
+JavaScript, sin librerías ni paso de compilación. Está organizada por capas, y
+cada capa solo conoce a las de abajo:
+
+```
+sitio/
+  index.html              Carcasa: menú, barra superior, zona de contenido
+  datos.js                Resultados del estudio (lo genera Python)
+  sw.js                   Trabajador de servicio: modo sin conexión
+  manifest.webmanifest    Permite instalarla como aplicación
+  estilos/
+    tokens.css            Colores, sombras y medidas, en claro y oscuro
+    base.css              Estructura general
+    componentes.css       Tarjetas, botones, campos, tablas, gráficos
+    vistas.css            Lo propio de cada vista
+  js/
+    principal.js          Arranque: arma todo lo demás
+    nucleo/               Almacén de estado, datos, formato, utilidades
+    dominio/              El modelo y las cuentas, como funciones puras
+    servicios/            Fuentes en vivo y descarga en Excel
+    graficos/             Dibujo en SVG
+    aplicacion/           Carcasa y rutas
+    vistas/               Una por sección
+  pruebas/                Pruebas que corren con Node
+```
+
+Las ideas que la sostienen:
+
+- **Un solo estado.** Lo que la persona elige (predicción, modelo, plazo,
+  crédito) y lo que llega en vivo vive en un almacén (`nucleo/almacen.js`).
+  Las vistas no se hablan entre sí: cambian el almacén y se enteran de los
+  cambios por suscripción. Cada vista se redibuja solo si cambió su parte.
+- **Rutas y carga por demanda.** Cada vista tiene su dirección (`#/simulador`,
+  `#/credito`…) y su módulo, que el navegador descarga la primera vez que se
+  abre. Al salir de una vista se cancelan sus suscripciones y animaciones.
+- **El modelo aparte de la pantalla.** `dominio/` no toca el navegador: son
+  funciones que reciben números y devuelven números, y por eso se pueden
+  probar solas.
+- **Fallar sin romperse.** Si una fuente en vivo no responde, se usa el dato
+  guardado y se marca como tal. Si una vista falla, el error se queda en su
+  recuadro y el resto sigue funcionando.
+- **Sin conexión.** El trabajador de servicio guarda la aplicación y la sirve
+  cuando no hay red. Las consultas en vivo no se guardan, para no mostrar un
+  dato viejo como si fuera de ahora.
+
+Las pruebas de la página corren con Node 18 o superior, desde `sitio/`:
+
+```bash
+node --test pruebas/
+```
+
+Comprueban, entre otras cosas, que la cuenta del navegador reproduce la
+proyección del estudio y que el Excel se arma bien.
 
 ## Datos
 
@@ -111,7 +175,8 @@ python -m streamlit run app.py
 ## Estructura
 
 ```
-sitio/      Página (HTML, CSS y JavaScript sin dependencias)
+abrir.bat   Abre la página en Windows con doble clic
+sitio/      Aplicación web (HTML, CSS y módulos de JavaScript, sin dependencias)
 proyecto/   Código Python: carga, modelos, backtest, informe y pruebas
 docs/       Informe de modelado
 media/      Gráficos del informe

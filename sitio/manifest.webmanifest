@@ -1,0 +1,14 @@
+{
+  "name": "TasaViva",
+  "short_name": "TasaViva",
+  "description": "Simulador en tiempo real de la tasa de crédito de consumo en Colombia",
+  "lang": "es",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0e1a33",
+  "theme_color": "#0e1a33",
+  "icons": [
+    { "src": "icono.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
