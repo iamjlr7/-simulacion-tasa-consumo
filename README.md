@@ -36,6 +36,22 @@ El titular, el gráfico, el simulador y la calculadora de cuota usan la
 predicción elegida. La optimista y la pesimista no son límites: la tasa puede
 salirse de ese rango.
 
+## Descargar la consulta en Excel
+
+El botón «Descargar Excel» (en el resumen, el simulador y la calculadora)
+guarda un archivo `.xlsx` con lo que haya en pantalla en ese momento:
+
+| Hoja | Contenido |
+| --- | --- |
+| Resumen | Fecha y hora, predicción elegida, modelo, plazo, resultado, condiciones de partida y avisos |
+| Proyección | Mes a mes, de 1 a 24: optimista, conservadora, pesimista y rango del 95 % |
+| Crédito | Monto, plazo y la cuota con la tasa de hoy, con cada predicción y con el tope legal |
+| Indicadores | Los indicadores del momento, con su fecha, su fuente y si venían en vivo |
+
+Los números van como números y las fechas como fechas, para que se puedan
+sumar o graficar. El archivo se genera en el navegador con `sitio/excel.js`,
+sin librerías y sin enviar nada a ningún servidor.
+
 ## Qué hay en la página
 
 | Sección | Qué responde |

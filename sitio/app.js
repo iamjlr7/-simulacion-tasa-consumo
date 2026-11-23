@@ -1097,6 +1097,135 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Descarga en Excel                                                   */
+  /* ------------------------------------------------------------------ */
+
+  const AVISO = "Proyección estadística con fines académicos. No es asesoría financiera ni una tasa oficial.";
+
+  // Reúne en un objeto plano todo lo que la persona tiene en pantalla:
+  // la predicción elegida, el modelo y el plazo del simulador, las
+  // condiciones, la calculadora de crédito y los indicadores del momento.
+  function consultaActual() {
+    const ahora = new Date();
+    const local = new Date(ahora.getTime() - ahora.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const elegida = prediccion();
+    const condiciones = admiteEscenario(SIM.modelo) ? SIM.escenario : ESCENARIO_BASE;
+    const sendas = Object.fromEntries(PREDICCIONES.map((p) => [p.id, sendaPrediccion(SIM.modelo, p.id, condiciones)]));
+    const central = sendaCentral(SIM.modelo, condiciones);
+    const minimo = margenError(SIM.modelo, 0.025);
+    const maximo = margenError(SIM.modelo, 0.975);
+    const i = SIM.h - 1;
+    const errores = episodios().e.map((fila) => fila[i]).filter((v) => v !== null);
+    const suben = errores.filter((error) => central[i] + error > Y0).length;
+
+    const monto = leerMonto();
+    const plazo = Number($("#c-plazo").value);
+    const cuando = Number($("#c-cuando").value);
+    const filaCredito = (caso, tasa, cuotaHoy, esElegida) => {
+      const cuota = cuotaMensual(monto, tasa, plazo);
+      return { caso, tasa, cuota, intereses: cuota * plazo - monto, total: cuota * plazo, diferencia: cuotaHoy === null ? null : cuota - cuotaHoy, elegida: esElegida };
+    };
+    const cuotaHoy = cuotaMensual(monto, Y0, plazo);
+    const filas = [filaCredito("Si lo pides hoy", Y0, null, false)];
+    PREDICCIONES.forEach((p) => {
+      const esElegida = p.id === TIPO;
+      filas.push(filaCredito(
+        `En ${mesAnio(FECHAS[cuando - 1])} · predicción ${p.nombre.toLowerCase()}${esElegida ? " (la que elegiste)" : ""}`,
+        sendaPrediccion(PRINCIPAL, p.id)[cuando - 1], cuotaHoy, esElegida,
+      ));
+    });
+    if (VIVO.usura.usura) filas.push(filaCredito("Con el tope legal (tasa de usura)", VIVO.usura.usura, cuotaHoy, false));
+
+    const estado = (clave) => (VIVO[clave].estado === "vivo" ? "En vivo" : "Guardado");
+    const iso = (t) => new Date(t).toISOString().slice(0, 10);
+    const trm = VIVO.trm.serie[VIVO.trm.serie.length - 1];
+    const fed = VIVO.fed.serie[VIVO.fed.serie.length - 1];
+    const sistema = VIVO.bancos.entidades.length ? promedioSistema(VIVO.bancos.entidades) : null;
+    const superfinanciera = "Superintendencia Financiera · datos.gov.co";
+    const indicadores = [
+      { nombre: "Tasa de crédito de consumo (la que se proyecta)", valor: Y0, formato: "tasa", unidad: "efectiva anual", fecha: ORIGEN, fuente: "Banco de la República", estado: "Guardado" },
+      { nombre: "Tasa de política monetaria", valor: D.politica.valor, formato: "tasa", unidad: "anual", fecha: D.politica.fecha, fuente: "Banco de la República", estado: "Guardado" },
+      { nombre: "Inflación anual", valor: P.inflacion[N - 1], formato: "tasa", unidad: "anual", fecha: ORIGEN, fuente: "Banco de la República y DANE", estado: "Guardado" },
+      { nombre: "Meta de inflación", valor: P.meta[N - 1], formato: "tasa", unidad: "anual", fecha: ORIGEN, fuente: "Banco de la República", estado: "Guardado" },
+    ];
+    if (VIVO.usura.usura) {
+      indicadores.push(
+        { nombre: "Tope legal para consumo (tasa de usura)", valor: VIVO.usura.usura, formato: "tasa", unidad: "efectiva anual", fecha: VIVO.usura.desde, fuente: superfinanciera, estado: estado("usura") },
+        { nombre: "Interés bancario corriente", valor: VIVO.usura.ibc, formato: "tasa", unidad: "efectiva anual", fecha: VIVO.usura.desde, fuente: superfinanciera, estado: estado("usura") },
+      );
+    }
+    if (sistema) indicadores.push({ nombre: "Libre inversión, promedio de la semana", valor: sistema.tasa, formato: "tasa", unidad: "efectiva anual", fecha: VIVO.bancos.corte, fuente: superfinanciera, estado: estado("bancos") });
+    if (trm) indicadores.push({ nombre: "Dólar (TRM)", valor: trm[1], formato: "trm", unidad: "pesos por dólar", fecha: iso(trm[0]), fuente: superfinanciera, estado: estado("trm") });
+    if (fed) indicadores.push({ nombre: "Tasa de fondos federales de EE. UU. (EFFR)", valor: fed[1], formato: "tasa", unidad: "anual", fecha: iso(fed[0]), fuente: "Reserva Federal de Nueva York", estado: estado("fed") });
+
+    return {
+      generado: local,
+      proyecto: { nombre: D.meta.nombre, lema: D.meta.lema, derechos: D.meta.derechos, aviso: AVISO },
+      origen: { fecha: ORIGEN, tasa: Y0 },
+      prediccion: { id: elegida.id, nombre: elegida.nombre, resumen: elegida.resumen, detalle: elegida.detalle },
+      modelo: { id: SIM.modelo, nombre: D.nombres[SIM.modelo] },
+      plazo: { meses: SIM.h, fecha: FECHAS[i] },
+      condiciones: {
+        activas: escenarioActivo(),
+        politica: P.pol[N - 1] + condiciones.dPol / 100,
+        politicaReal: P.pol[N - 1],
+        m2: condiciones.m2,
+        m2Real: ESCENARIO_BASE.m2,
+        inflacion: condiciones.inf,
+        inflacionReal: ESCENARIO_BASE.inf,
+      },
+      resultado: {
+        tasa: sendas[TIPO][i],
+        cambio: sendas[TIPO][i] - Y0,
+        optimista: sendas.optimista[i],
+        conservadora: sendas.conservadora[i],
+        pesimista: sendas.pesimista[i],
+        probSube: errores.length ? suben / errores.length : null,
+        suben,
+        episodios: errores.length,
+        rmse: rmse(SIM.modelo, SIM.h),
+      },
+      senda: FECHAS.map((fecha, h) => ({
+        meses: h + 1,
+        fecha,
+        optimista: sendas.optimista[h],
+        conservadora: sendas.conservadora[h],
+        pesimista: sendas.pesimista[h],
+        min95: central[h] + minimo[h],
+        max95: central[h] + maximo[h],
+      })),
+      credito: { monto, plazo, cuando: { meses: cuando, fecha: FECHAS[cuando - 1] }, modelo: D.nombres[PRINCIPAL], filas },
+      indicadores,
+    };
+  }
+
+  function descargarExcel(boton) {
+    const excel = window.TasaVivaExcel;
+    if (!excel) return;
+    const consulta = consultaActual();
+    const bytes = excel.crearLibro(excel.construirHojas(consulta), { titulo: `${D.meta.nombre} · consulta`, autor: D.meta.nombre });
+    const nombre = excel.nombreArchivo(consulta);
+    const enlace = document.createElement("a");
+    enlace.href = URL.createObjectURL(new Blob([bytes], { type: excel.TIPO_MIME }));
+    enlace.download = nombre;
+    document.body.appendChild(enlace);
+    enlace.click();
+    enlace.remove();
+    setTimeout(() => URL.revokeObjectURL(enlace.href), 2000);
+    $("#excel-estado").textContent = `Se descargó ${nombre}`;
+    if (boton && !boton.dataset.original) {
+      boton.dataset.original = boton.innerHTML;
+      boton.classList.add("hecho");
+      boton.textContent = "Descargado ✓";
+      setTimeout(() => {
+        boton.innerHTML = boton.dataset.original;
+        boton.classList.remove("hecho");
+        delete boton.dataset.original;
+      }, 2500);
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Mercado                                                             */
   /* ------------------------------------------------------------------ */
 
@@ -1363,7 +1492,11 @@
     document.addEventListener("click", (evento) => {
       const boton = evento.target.closest ? evento.target.closest("[data-pred] [data-tipo]") : null;
       if (boton) elegirPrediccion(boton.dataset.tipo);
+      const excel = evento.target.closest ? evento.target.closest("[data-excel]") : null;
+      if (excel) descargarExcel(excel);
     });
+    // Para pruebas: la misma consulta que se vuelca al Excel, como datos planos.
+    window.TasaViva = { consultaActual };
     const enlaces = $$(".nav a");
     const observador = new IntersectionObserver((entradas) => {
       entradas.forEach((entrada) => {

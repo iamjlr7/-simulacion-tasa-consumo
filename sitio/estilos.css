@@ -243,6 +243,14 @@ main { max-width: 1240px; margin: 0 auto; padding: 0 1.25rem 3rem; }
 .boton.primario:hover { filter: brightness(1.12); }
 .boton.chico { font-size: .82rem; padding: .4rem .7rem; }
 
+.boton svg { flex: none; }
+.boton.hecho { border-color: var(--baja); color: var(--baja); }
+.controles .boton[data-excel] { width: 100%; margin-top: .3rem; }
+.descarga { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.descarga strong { display: block; font-size: .98rem; font-weight: 650; }
+.descarga span { display: block; font-size: .84rem; color: var(--tinta-2); max-width: 62ch; }
+.solo-lector { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
 .heroe-grafico { margin: 0; }
 figcaption strong, .cabecera-grafico strong { display: block; font-size: .98rem; font-weight: 650; }
 figcaption span, .cabecera-grafico span { display: block; font-size: .82rem; color: var(--tinta-3); }
